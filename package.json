@@ -87,5 +87,8 @@
   "bugs": {
     "url": "https://github.com/Schero94/strapi-auto-uuid/issues"
   },
-  "private": false
+  "private": false,
+  "publishConfig": {
+    "access": "public"
+  }
 }
