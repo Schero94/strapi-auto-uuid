@@ -1,6 +1,6 @@
 {
   "name": "strapi-auto-uuid-v5",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Strapi v5 plugin that automatically generates and manages UUID v4/v7 for your content types",
   "keywords": [
     "strapi",
