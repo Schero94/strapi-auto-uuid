@@ -1,6 +1,6 @@
 # Strapi Auto UUID
 
-[![NPM Version](https://img.shields.io/npm/v/strapi-auto-uuid.svg)](https://www.npmjs.com/package/strapi-auto-uuid)
+[![NPM Version](https://img.shields.io/npm/v/strapi-auto-uuid-v5.svg)](https://www.npmjs.com/package/strapi-auto-uuid-v5)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Strapi v5](https://img.shields.io/badge/Strapi-v5-blue.svg)](https://strapi.io)
 
@@ -25,9 +25,9 @@ A powerful UUID custom field plugin for Strapi v5 that automatically generates a
 ## Installation
 
 ```bash
-npm install strapi-auto-uuid
+npm install strapi-auto-uuid-v5
 # or
-yarn add strapi-auto-uuid
+yarn add strapi-auto-uuid-v5
 ```
 
 ## Quick Start
