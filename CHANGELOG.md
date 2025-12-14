@@ -1,3 +1,10 @@
+## [1.0.2](https://github.com/Schero94/strapi-auto-uuid/compare/v1.0.1...v1.0.2) (2025-12-14)
+
+
+### Bug Fixes
+
+* add publishConfig access public for npm provenance ([76d1449](https://github.com/Schero94/strapi-auto-uuid/commit/76d144925864751d207865f45fa354ff15d84b40))
+
 ## [1.0.1](https://github.com/Schero94/strapi-auto-uuid/compare/v1.0.0...v1.0.1) (2025-12-14)
 
 
