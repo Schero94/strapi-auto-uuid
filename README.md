@@ -1,5 +1,13 @@
 # Strapi Auto UUID
 
+[![NPM Version](https://img.shields.io/npm/v/strapi-auto-uuid.svg)](https://www.npmjs.com/package/strapi-auto-uuid)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Strapi v5](https://img.shields.io/badge/Strapi-v5-blue.svg)](https://strapi.io)
+
+> 🔄 **This is the official Strapi v5 continuation of [Cringe-Studio/strapi-auto-uuid](https://github.com/Cringe-Studio/strapi-auto-uuid)**
+> 
+> The original plugin only supports Strapi v4. This fork provides full Strapi v5 compatibility with new features and improvements.
+
 A powerful UUID custom field plugin for Strapi v5 that automatically generates and manages UUID v4/v7 values for your content types.
 
 ## Features
@@ -262,16 +270,24 @@ MIT License - see LICENSE file for details.
 
 ## Support
 
-- GitHub Issues: [Report bugs](https://github.com/Cringe-Studio/strapi-auto-uuid/issues)
-- Documentation: [Full docs](https://github.com/Cringe-Studio/strapi-auto-uuid#readme)
+- GitHub Issues: [Report bugs](https://github.com/Schero94/strapi-auto-uuid/issues)
+- Documentation: [Full docs](https://github.com/Schero94/strapi-auto-uuid#readme)
+
+## Credits
+
+This plugin is a Strapi v5 continuation of the original [strapi-auto-uuid](https://github.com/Cringe-Studio/strapi-auto-uuid) by [Cringe Studio](https://github.com/Cringe-Studio). Thanks for the great foundation!
 
 ## Changelog
 
-### v1.0.0 (Strapi v5)
-- Complete rewrite for Strapi v5
-- Added UUID v7 support
-- New admin panel with management tools
-- Migration support from v4
-- Export/Import functionality
-- Per-field configuration options
-- Copy to clipboard button
+### v2.0.0 (Strapi v5)
+- 🚀 **Complete rewrite for Strapi v5**
+- ✨ Added UUID v7 support (time-sortable)
+- 🎨 New admin panel with management tools
+- 🔄 Migration support from Strapi v4
+- 📦 Export/Import functionality
+- ⚙️ Per-field configuration options
+- 📋 Copy to clipboard button
+- 🔧 Improved uniqueness validation
+
+### Previous versions (Strapi v4)
+See [Cringe-Studio/strapi-auto-uuid](https://github.com/Cringe-Studio/strapi-auto-uuid) for Strapi v4 releases.
