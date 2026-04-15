@@ -1,6 +1,6 @@
 {
   "name": "strapi-auto-uuid-v5",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Strapi v5 plugin that automatically generates and manages UUID v4/v7 for your content types",
   "keywords": [
     "strapi",
@@ -42,34 +42,34 @@
     "verify": "strapi-plugin verify"
   },
   "dependencies": {
-    "uuid": "^9.0.0"
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/commit-analyzer": "^13.0.0",
     "@semantic-release/git": "^10.0.1",
-    "@semantic-release/github": "^11.0.2",
-    "@semantic-release/npm": "^12.0.1",
+    "@semantic-release/github": "^12.0.6",
+    "@semantic-release/npm": "^13.1.5",
     "@semantic-release/release-notes-generator": "^14.0.1",
-    "@strapi/design-system": "^2.0.0-rc.30",
-    "@strapi/icons": "^2.0.0-rc.30",
-    "@strapi/strapi": "^5.32.0",
-    "@strapi/sdk-plugin": "^5.3.2",
-    "prettier": "^3.7.4",
+    "@strapi/design-system": "^2.2.0",
+    "@strapi/icons": "^2.2.0",
+    "@strapi/strapi": "^5.42.1",
+    "@strapi/sdk-plugin": "^6.0.1",
+    "prettier": "^3.8.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-intl": "^7.1.14",
     "react-router-dom": "^6.30.1",
-    "semantic-release": "^24.2.3",
-    "styled-components": "^6.1.19"
+    "semantic-release": "^25.0.3",
+    "styled-components": "^6.4.0"
   },
   "peerDependencies": {
     "@strapi/strapi": "^5.0.0",
-    "@strapi/sdk-plugin": "^5.3.2",
+    "@strapi/sdk-plugin": "^5.3.2 || ^6.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.30.1",
-    "styled-components": "^6.1.19"
+    "react-router-dom": "^6.0.0",
+    "styled-components": "^6.0.0"
   },
   "strapi": {
     "kind": "plugin",

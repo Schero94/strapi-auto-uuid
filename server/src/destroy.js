@@ -1,5 +1,5 @@
 const destroy = ({ strapi }) => {
-  // destroy phase
+  // cleanup phase
 };
 
 export default destroy;

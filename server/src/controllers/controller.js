@@ -1,48 +1,50 @@
-'use strict';
+import { errors } from '@strapi/utils';
+
+const { ValidationError } = errors;
+
+const PLUGIN_VERSION = '1.1.0';
 
 /**
  * UUID Plugin Controller
- * 
+ *
  * Provides endpoints for health check, UUID validation, diagnosis, auto-fix,
- * migration support, and statistics.
+ * migration support, and statistics. All destructive endpoints require admin auth.
  */
 const controller = ({ strapi }) => ({
   /**
-   * Health check endpoint
-   * @param {Object} ctx - Koa context
+   * @route GET /field-uuid/health
+   * @returns {{ status, plugin, version, message }}
    */
   async index(ctx) {
     ctx.body = {
       status: 'ok',
       plugin: 'field-uuid',
-      version: '1.0.0',
+      version: PLUGIN_VERSION,
       message: 'Strapi Auto UUID Plugin is running',
     };
   },
 
   /**
-   * Checks if a UUID already exists in a content type
-   * @param {Object} ctx - Koa context
+   * @route POST /field-uuid/check-duplicate
+   * @body {{ contentType: string, field: string, uuid: string, excludeDocumentId?: string }}
+   * @returns {{ exists: boolean, valid: boolean }}
+   * @throws {ValidationError} If input is missing or invalid
    */
   async checkDuplicate(ctx) {
     const { contentType, field, uuid, excludeDocumentId } = ctx.request.body;
 
     if (!contentType || !field || !uuid) {
-      return ctx.badRequest('Missing required parameters: contentType, field, uuid');
+      throw new ValidationError('Missing required parameters: contentType, field, uuid');
     }
 
-    const model = strapi.contentTypes[contentType];
-    if (!model) {
-      return ctx.badRequest(`Content type '${contentType}' not found`);
-    }
-
-    const attribute = model.attributes[field];
-    if (!attribute) {
-      return ctx.badRequest(`Field '${field}' not found in content type '${contentType}'`);
+    const serviceInstance = strapi.plugin('field-uuid').service('service');
+    const validation = serviceInstance.validateUuidField(contentType, field);
+    if (!validation.valid) {
+      throw new ValidationError(validation.error);
     }
 
     try {
-      const result = await strapi.plugin('field-uuid').service('service').checkDuplicate({
+      const result = await serviceInstance.checkDuplicate({
         contentType,
         field,
         uuid,
@@ -52,13 +54,13 @@ const controller = ({ strapi }) => ({
       ctx.body = result;
     } catch (error) {
       strapi.log.error('[strapi-auto-uuid] Error checking duplicate:', error);
-      return ctx.internalServerError('Failed to check UUID duplicate');
+      throw new errors.ApplicationError('Failed to check UUID duplicate');
     }
   },
 
   /**
-   * Diagnoses all UUID fields for duplicates across all content types
-   * @param {Object} ctx - Koa context
+   * @route GET /field-uuid/diagnose
+   * @returns {Object} Diagnosis report
    */
   async diagnose(ctx) {
     try {
@@ -66,20 +68,25 @@ const controller = ({ strapi }) => ({
       ctx.body = report;
     } catch (error) {
       strapi.log.error('[strapi-auto-uuid] Error during diagnosis:', error);
-      return ctx.internalServerError('Failed to diagnose UUIDs');
+      throw new errors.ApplicationError('Failed to diagnose UUIDs');
     }
   },
 
   /**
-   * Auto-fixes all duplicate UUIDs by generating new unique UUIDs
-   * @param {Object} ctx - Koa context
+   * @route POST /field-uuid/autofix
+   * @body {{ dryRun?: boolean }}
+   * @returns {Object} Fix report
    */
   async autofix(ctx) {
     const { dryRun = false } = ctx.request.body || {};
 
+    if (typeof dryRun !== 'boolean') {
+      throw new ValidationError('dryRun must be a boolean');
+    }
+
     try {
       const report = await strapi.plugin('field-uuid').service('service').autofix({ dryRun });
-      
+
       if (!dryRun && report.totalFixed > 0) {
         strapi.log.info(`[strapi-auto-uuid] Auto-fix completed: ${report.totalFixed} duplicate(s) fixed`);
       }
@@ -87,20 +94,25 @@ const controller = ({ strapi }) => ({
       ctx.body = report;
     } catch (error) {
       strapi.log.error('[strapi-auto-uuid] Error during auto-fix:', error);
-      return ctx.internalServerError('Failed to auto-fix UUIDs');
+      throw new errors.ApplicationError('Failed to auto-fix UUIDs');
     }
   },
 
   /**
-   * Generates missing UUIDs for entries with empty UUID fields
-   * @param {Object} ctx - Koa context
+   * @route POST /field-uuid/generate-missing
+   * @body {{ dryRun?: boolean }}
+   * @returns {Object} Generation report
    */
   async generateMissing(ctx) {
     const { dryRun = false } = ctx.request.body || {};
 
+    if (typeof dryRun !== 'boolean') {
+      throw new ValidationError('dryRun must be a boolean');
+    }
+
     try {
       const report = await strapi.plugin('field-uuid').service('service').generateMissing({ dryRun });
-      
+
       if (!dryRun && report.totalGenerated > 0) {
         strapi.log.info(`[strapi-auto-uuid] Generated ${report.totalGenerated} missing UUID(s)`);
       }
@@ -108,13 +120,13 @@ const controller = ({ strapi }) => ({
       ctx.body = report;
     } catch (error) {
       strapi.log.error('[strapi-auto-uuid] Error generating missing UUIDs:', error);
-      return ctx.internalServerError('Failed to generate missing UUIDs');
+      throw new errors.ApplicationError('Failed to generate missing UUIDs');
     }
   },
 
   /**
-   * Returns list of all content types using UUID fields
-   * @param {Object} ctx - Koa context
+   * @route GET /field-uuid/models
+   * @returns {{ models: Object }}
    */
   async getModels(ctx) {
     try {
@@ -122,17 +134,13 @@ const controller = ({ strapi }) => ({
       ctx.body = { models };
     } catch (error) {
       strapi.log.error('[strapi-auto-uuid] Error getting models:', error);
-      return ctx.internalServerError('Failed to get UUID models');
+      throw new errors.ApplicationError('Failed to get UUID models');
     }
   },
 
-  // =====================
-  // Migration Endpoints
-  // =====================
-
   /**
-   * Get migration status - identifies issues that need fixing
-   * @param {Object} ctx - Koa context
+   * @route GET /field-uuid/migration/status
+   * @returns {Object} Migration status
    */
   async getMigrationStatus(ctx) {
     try {
@@ -140,21 +148,27 @@ const controller = ({ strapi }) => ({
       ctx.body = status;
     } catch (error) {
       strapi.log.error('[strapi-auto-uuid] Error checking migration status:', error);
-      return ctx.internalServerError('Failed to check migration status');
+      throw new errors.ApplicationError('Failed to check migration status');
     }
   },
 
   /**
-   * Run migration to fix all UUID issues
-   * @param {Object} ctx - Koa context
+   * @route POST /field-uuid/migration/run
+   * @body {{ dryRun?: boolean, fixEmpty?: boolean, fixInvalid?: boolean, fixDuplicates?: boolean }}
+   * @returns {Object} Migration result
    */
   async runMigration(ctx) {
-    const { 
-      dryRun = true, 
-      fixEmpty = true, 
-      fixInvalid = true, 
-      fixDuplicates = true 
+    const {
+      dryRun = true,
+      fixEmpty = true,
+      fixInvalid = true,
+      fixDuplicates = true,
     } = ctx.request.body || {};
+
+    if (typeof dryRun !== 'boolean' || typeof fixEmpty !== 'boolean' ||
+        typeof fixInvalid !== 'boolean' || typeof fixDuplicates !== 'boolean') {
+      throw new ValidationError('All options must be booleans');
+    }
 
     try {
       const result = await strapi.plugin('field-uuid').service('migrations').runMigration({
@@ -171,37 +185,41 @@ const controller = ({ strapi }) => ({
       ctx.body = result;
     } catch (error) {
       strapi.log.error('[strapi-auto-uuid] Error running migration:', error);
-      return ctx.internalServerError('Failed to run migration');
+      throw new errors.ApplicationError('Failed to run migration');
     }
   },
 
   /**
-   * Export UUID mappings for backup
-   * @param {Object} ctx - Koa context
+   * @route GET /field-uuid/migration/export
+   * @returns {Object} Export data (JSON download)
    */
   async exportMappings(ctx) {
     try {
       const exportData = await strapi.plugin('field-uuid').service('migrations').exportMappings();
-      
-      // Set headers for file download
+
       ctx.set('Content-Type', 'application/json');
       ctx.set('Content-Disposition', `attachment; filename="uuid-mappings-${Date.now()}.json"`);
       ctx.body = exportData;
     } catch (error) {
       strapi.log.error('[strapi-auto-uuid] Error exporting mappings:', error);
-      return ctx.internalServerError('Failed to export UUID mappings');
+      throw new errors.ApplicationError('Failed to export UUID mappings');
     }
   },
 
   /**
-   * Import UUID mappings
-   * @param {Object} ctx - Koa context
+   * @route POST /field-uuid/migration/import
+   * @body {{ mappings: Object, dryRun?: boolean, overwrite?: boolean }}
+   * @returns {Object} Import result
    */
   async importMappings(ctx) {
     const { mappings, dryRun = true, overwrite = false } = ctx.request.body || {};
 
-    if (!mappings) {
-      return ctx.badRequest('Missing required parameter: mappings');
+    if (!mappings || typeof mappings !== 'object') {
+      throw new ValidationError('Missing or invalid required parameter: mappings');
+    }
+
+    if (typeof dryRun !== 'boolean' || typeof overwrite !== 'boolean') {
+      throw new ValidationError('dryRun and overwrite must be booleans');
     }
 
     try {
@@ -212,19 +230,19 @@ const controller = ({ strapi }) => ({
       ctx.body = result;
     } catch (error) {
       strapi.log.error('[strapi-auto-uuid] Error importing mappings:', error);
-      return ctx.internalServerError('Failed to import UUID mappings');
+      throw new errors.ApplicationError('Failed to import UUID mappings');
     }
   },
 
   /**
-   * Get comprehensive UUID statistics
-   * @param {Object} ctx - Koa context
+   * @route GET /field-uuid/stats
+   * @returns {Object} Comprehensive statistics
    */
   async getStats(ctx) {
     try {
       const models = strapi.plugin('field-uuid').service('service').getUuidModels();
       const migrationStatus = await strapi.plugin('field-uuid').service('migrations').checkMigrationStatus();
-      
+
       const stats = {
         contentTypes: Object.keys(models).length,
         totalFields: Object.values(models).reduce((sum, fields) => sum + fields.length, 0),
@@ -236,13 +254,14 @@ const controller = ({ strapi }) => ({
         },
         needsMigration: migrationStatus.needsMigration,
         models,
+        version: PLUGIN_VERSION,
         lastChecked: new Date().toISOString(),
       };
 
       ctx.body = stats;
     } catch (error) {
       strapi.log.error('[strapi-auto-uuid] Error getting stats:', error);
-      return ctx.internalServerError('Failed to get UUID statistics');
+      throw new errors.ApplicationError('Failed to get UUID statistics');
     }
   },
 });

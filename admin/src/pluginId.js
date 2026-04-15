@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Plugin ID - Must match the 'name' in package.json strapi config
  */

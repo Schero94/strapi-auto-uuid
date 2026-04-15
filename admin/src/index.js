@@ -1,12 +1,7 @@
-'use strict';
-
 /**
  * strapi-auto-uuid - Admin Entry Point
- * 
+ *
  * Registers the UUID custom field and settings page in the Strapi admin panel.
- * This allows the field to be used in Content-Type Builder and provides
- * management tools for UUID maintenance.
- * 
  * @see https://docs.strapi.io/cms/features/custom-fields
  */
 import { PLUGIN_ID } from './pluginId';
@@ -178,7 +173,6 @@ export default {
       ]
     );
 
-    console.log(`[${PLUGIN_ID}] Custom field registered in admin panel`);
   },
 
   /**
@@ -186,7 +180,7 @@ export default {
    * @param {Object} app - Strapi admin app instance
    */
   async bootstrap(app) {
-    console.log(`[${PLUGIN_ID}] Plugin bootstrapped`);
+    // post-registration setup
   },
 
   /**

@@ -1,15 +1,10 @@
-'use strict';
-
 /**
  * Register Custom Field for UUID
- * 
- * This registers the 'uuid' custom field type that can be used
- * in Content-Type Builder. The field type is 'string' which is
- * correct for UUID values. The 'uid' type is designed for slugs
- * with targetField and is not appropriate for UUIDs.
- * 
+ *
+ * Registers the 'uuid' custom field type for Content-Type Builder.
+ * The field type is 'string' (not 'uid' which is for slugs).
  * Uniqueness is enforced via lifecycle hooks in bootstrap.js.
- * 
+ *
  * @see https://docs.strapi.io/cms/features/custom-fields
  */
 const register = ({ strapi }) => {

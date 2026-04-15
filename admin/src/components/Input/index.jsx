@@ -1,8 +1,6 @@
-'use strict';
-
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
-import { v4 as uuidv4, validate as validateUuid } from 'uuid';
+import * as uuidLib from 'uuid';
 import {
   Field,
   Flex,
@@ -11,16 +9,17 @@ import {
 } from '@strapi/design-system';
 import { ArrowClockwise, Duplicate, Check } from '@strapi/icons';
 
+const { v4: uuidv4, validate: validateUuid } = uuidLib;
+const uuidv7 = uuidLib.v7 || uuidv4;
+
 /**
  * UUID Input Component for Strapi v5
- * 
- * Provides a read-only input field that displays a UUID v4.
- * Features:
- * - Auto-generates UUID if empty
- * - Validates existing UUID format
- * - Refresh button to generate new UUID
- * - Copy button to copy UUID to clipboard
- * - Read-only to prevent manual editing
+ *
+ * Respects per-field CTB options:
+ * - uuid-version: 'v4' (default) or 'v7'
+ * - uuid-prefix: optional prefix string
+ * - disable-auto-generate: if true, no auto-generation on mount
+ * - allow-edit: if true, field is not read-only
  */
 const Input = React.forwardRef((props, forwardedRef) => {
   const {
@@ -40,74 +39,66 @@ const Input = React.forwardRef((props, forwardedRef) => {
   const [invalidUUID, setInvalidUUID] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
-  
-  // Track if we've already generated a UUID on mount to prevent loops
+
   const hasGeneratedRef = useRef(false);
   const previousValueRef = useRef(value);
 
-  // Memoized change handler to avoid dependency issues
+  const fieldOptions = attribute?.options || {};
+  const uuidVersion = fieldOptions['uuid-version'] || 'v4';
+  const uuidPrefix = fieldOptions['uuid-prefix'] || '';
+  const disableAutoGenerate = fieldOptions['disable-auto-generate'] === true;
+  const allowEdit = fieldOptions['allow-edit'] === true;
+
+  const generateNewUuid = useCallback(() => {
+    const raw = uuidVersion === 'v7' ? uuidv7() : uuidv4();
+    return uuidPrefix ? `${uuidPrefix}${raw}` : raw;
+  }, [uuidVersion, uuidPrefix]);
+
   const handleChange = useCallback((newValue) => {
     onChange({ target: { name, type: attribute.type, value: newValue } });
   }, [onChange, name, attribute.type]);
 
-  // Generate UUID on mount if empty (runs only once)
   useEffect(() => {
-    if (!value && !hasGeneratedRef.current) {
+    if (!value && !hasGeneratedRef.current && !disableAutoGenerate) {
       hasGeneratedRef.current = true;
-      const newUUID = uuidv4();
-      handleChange(newUUID);
+      handleChange(generateNewUuid());
     }
-  }, [value, handleChange]);
+  }, [value, handleChange, disableAutoGenerate, generateNewUuid]);
 
-  // Validate UUID format when value changes
   useEffect(() => {
     if (value !== previousValueRef.current) {
       previousValueRef.current = value;
-      
+
       if (value) {
-        const isValid = validateUuid(value);
-        setInvalidUUID(!isValid);
+        const rawUuid = uuidPrefix && value.startsWith(uuidPrefix)
+          ? value.slice(uuidPrefix.length)
+          : value;
+        setInvalidUUID(!validateUuid(rawUuid));
       } else {
         setInvalidUUID(false);
       }
     }
-  }, [value]);
+  }, [value, uuidPrefix]);
 
-  // Generate new UUID
   const handleRefresh = useCallback(() => {
     setIsGenerating(true);
-    const newUUID = uuidv4();
-    handleChange(newUUID);
+    handleChange(generateNewUuid());
     setInvalidUUID(false);
-    // Brief visual feedback
     setTimeout(() => setIsGenerating(false), 150);
-  }, [handleChange]);
+  }, [handleChange, generateNewUuid]);
 
-  // Copy UUID to clipboard
   const handleCopy = useCallback(async () => {
     if (!value) return;
-    
+
     try {
       await navigator.clipboard.writeText(value);
       setIsCopied(true);
-      // Reset after 2 seconds
       setTimeout(() => setIsCopied(false), 2000);
-    } catch (err) {
-      // Fallback for older browsers
-      const textArea = document.createElement('textarea');
-      textArea.value = value;
-      textArea.style.position = 'fixed';
-      textArea.style.opacity = '0';
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
-      setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000);
+    } catch {
+      /* clipboard API not available in this context */
     }
   }, [value]);
 
-  // Build error message
   const fieldError = error || (invalidUUID
     ? formatMessage({
         id: 'field-uuid.form.field.error',
@@ -130,7 +121,7 @@ const Input = React.forwardRef((props, forwardedRef) => {
             defaultMessage: 'UUID',
           })}
         </Field.Label>
-        
+
         <Flex gap={2}>
           <div style={{ flex: 1 }}>
             <TextInput
@@ -138,7 +129,8 @@ const Input = React.forwardRef((props, forwardedRef) => {
               name={name}
               value={value}
               disabled={disabled}
-              readOnly
+              readOnly={!allowEdit}
+              onChange={allowEdit ? (e) => handleChange(e.target.value) : undefined}
               placeholder={formatMessage({
                 id: 'field-uuid.form.placeholder',
                 defaultMessage: 'UUID will be auto-generated',
@@ -153,8 +145,7 @@ const Input = React.forwardRef((props, forwardedRef) => {
               }}
             />
           </div>
-          
-          {/* Copy Button */}
+
           <IconButton
             onClick={handleCopy}
             disabled={disabled || !value}
@@ -164,16 +155,15 @@ const Input = React.forwardRef((props, forwardedRef) => {
             })}
             variant={isCopied ? 'success' : 'secondary'}
             withTooltip={false}
-            style={isCopied ? { 
-              background: '#16A34A', 
+            style={isCopied ? {
+              background: '#16A34A',
               color: 'white',
               transition: 'all 0.2s ease',
             } : {}}
           >
             {isCopied ? <Check /> : <Duplicate />}
           </IconButton>
-          
-          {/* Refresh Button */}
+
           <IconButton
             onClick={handleRefresh}
             disabled={disabled || isGenerating}
@@ -187,7 +177,7 @@ const Input = React.forwardRef((props, forwardedRef) => {
             <ArrowClockwise />
           </IconButton>
         </Flex>
-        
+
         <Field.Hint />
         <Field.Error />
       </Flex>

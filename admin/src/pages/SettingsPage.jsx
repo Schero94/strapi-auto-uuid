@@ -1,10 +1,7 @@
-'use strict';
-
 /**
  * UUID Plugin - Settings Page
- * Modern settings page with styled-components and improved UX
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useIntl } from 'react-intl';
 import { useFetchClient, useNotification } from '@strapi/strapi/admin';
 import styled, { keyframes, css } from 'styled-components';
@@ -310,41 +307,39 @@ const SettingsPage = () => {
   /**
    * Fetches list of models using UUID fields
    */
-  const fetchModels = async () => {
+  const fetchModels = useCallback(async () => {
     try {
       const response = await get(`/${PLUGIN_ID}/models`);
       setModels(response.data?.models || {});
-    } catch (err) {
-      console.error('[UUID Settings] Failed to fetch models:', err);
+    } catch {
+      // silently handled
     }
-  };
+  }, [get]);
 
   /**
    * Fetches comprehensive statistics
    */
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const response = await get(`/${PLUGIN_ID}/stats`);
       setStats(response.data);
       setModels(response.data?.models || {});
-    } catch (err) {
-      console.error('[UUID Settings] Failed to fetch stats:', err);
-      // Fallback to models endpoint
+    } catch {
       await fetchModels();
     }
-  };
+  }, [get, fetchModels]);
 
   /**
    * Fetches migration status
    */
-  const fetchMigrationStatus = async () => {
+  const fetchMigrationStatus = useCallback(async () => {
     try {
       const response = await get(`/${PLUGIN_ID}/migration/status`);
       setMigrationStatus(response.data);
-    } catch (err) {
-      console.error('[UUID Settings] Failed to fetch migration status:', err);
+    } catch {
+      // silently handled
     }
-  };
+  }, [get]);
 
   /**
    * Runs diagnosis to find duplicate UUIDs
@@ -536,11 +531,10 @@ const SettingsPage = () => {
     }
   };
 
-  // Load stats and migration status on mount
   useEffect(() => {
     fetchStats();
     fetchMigrationStatus();
-  }, []);
+  }, [fetchStats, fetchMigrationStatus]);
 
   const modelCount = stats?.contentTypes ?? Object.keys(models).length;
   const fieldCount = stats?.totalFields ?? Object.values(models).reduce((sum, fields) => sum + fields.length, 0);
@@ -648,7 +642,7 @@ const SettingsPage = () => {
               fontSize: '13px',
               borderRadius: '8px'
             }}>
-              v1.0.0
+              v{stats?.version || '1.1.0'}
             </Badge>
           </Flex>
         </HeaderBanner>
