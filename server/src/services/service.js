@@ -60,15 +60,15 @@ const service = ({ strapi }) => ({
       return { exists: false, valid: false };
     }
 
-    const filters = { [field]: uuid };
-
+    // Use db.query so both draft and published rows are checked.
+    const where = { [field]: uuid };
     if (excludeDocumentId) {
-      filters.documentId = { $ne: excludeDocumentId };
+      where.documentId = { $ne: excludeDocumentId };
     }
 
-    const existing = await strapi.documents(contentType).findFirst({
-      filters,
-      fields: ['documentId'],
+    const existing = await strapi.db.query(contentType).findOne({
+      where,
+      select: ['documentId'],
     });
 
     return { exists: !!existing, valid: true };

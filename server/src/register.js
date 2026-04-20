@@ -17,8 +17,11 @@ const register = ({ strapi }) => {
       isResizable: true,
     },
   });
-  
-  strapi.log.info('[strapi-auto-uuid] Custom field registered');
+
+  const logLevel = strapi.config.get('plugin::field-uuid.logLevel', 'info');
+  if (logLevel === 'debug' || logLevel === 'info') {
+    strapi.log.info('[strapi-auto-uuid] Custom field registered');
+  }
 };
 
 export default register;

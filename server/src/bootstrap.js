@@ -6,7 +6,27 @@ import { errors } from '@strapi/utils';
 
 const { ValidationError, ApplicationError } = errors;
 
-const MAX_QUERY_LIMIT = 10000;
+const PREFIX_REGEX = /^[a-zA-Z0-9_-]{1,16}$/;
+
+/**
+ * Registers RBAC permission actions for the plugin so admin routes can use
+ * `admin::hasPermissions` instead of a plain `isAuthenticatedAdmin` policy.
+ * @param {Object} strapi
+ */
+const registerPluginPermissions = async (strapi) => {
+  const actions = [
+    { section: 'plugins', displayName: 'Read diagnostics and stats', uid: 'read', pluginName: 'field-uuid' },
+    { section: 'plugins', displayName: 'Run destructive auto-fix / generate / migrate', uid: 'migrate', pluginName: 'field-uuid' },
+    { section: 'plugins', displayName: 'Export UUID mappings', uid: 'export', pluginName: 'field-uuid' },
+    { section: 'plugins', displayName: 'Import UUID mappings', uid: 'import', pluginName: 'field-uuid' },
+  ];
+
+  try {
+    await strapi.admin?.services?.permission?.actionProvider?.registerMany?.(actions);
+  } catch (err) {
+    strapi.log.error('[strapi-auto-uuid] Failed to register plugin permissions:', err.message);
+  }
+};
 
 /**
  * Bootstrap - Lifecycle Hooks for UUID Auto-Generation
@@ -20,7 +40,7 @@ const MAX_QUERY_LIMIT = 10000;
  * - disable-auto-generate
  * - allow-edit
  */
-const bootstrap = ({ strapi }) => {
+const bootstrap = async ({ strapi }) => {
   const { contentTypes } = strapi;
 
   const pluginConfig = strapi.config.get('plugin::field-uuid', {});
@@ -33,9 +53,11 @@ const bootstrap = ({ strapi }) => {
     autoMigrate: pluginConfig.autoMigrate || false,
   };
 
+  await registerPluginPermissions(strapi);
+
   /**
    * @param {string} version - 'v4' or 'v7'
-   * @param {string} [prefix] - optional prefix string
+   * @param {string} [prefix] - optional prefix string (validated upstream)
    * @returns {string}
    */
   const generateUuid = (version = config.defaultVersion, prefix = '') => {
@@ -51,40 +73,58 @@ const bootstrap = ({ strapi }) => {
   };
 
   /**
-   * Reads per-field CTB options from the attribute definition.
-   * Options are stored under attribute.options (e.g. 'uuid-version', 'uuid-prefix').
+   * Reads per-field CTB options. Untrusted prefixes from CTB are validated
+   * against PREFIX_REGEX to prevent smuggling of HTML, SQL, or other
+   * content that could end up in API responses and downstream frontends.
    * @param {Object} attribute - Content type attribute definition
-   * @returns {{ version: string, prefix: string, disableAutoGenerate: boolean, allowEdit: boolean }}
+   * @param {string} modelUid - Content type UID (for logging)
+   * @param {string} fieldName - Attribute name (for logging)
    */
-  const getFieldOptions = (attribute) => {
+  const getFieldOptions = (attribute, modelUid, fieldName) => {
     const opts = attribute?.options || {};
+    const rawPrefix = opts['uuid-prefix'] || '';
+    let prefix = '';
+    if (rawPrefix) {
+      if (PREFIX_REGEX.test(rawPrefix)) {
+        prefix = rawPrefix;
+      } else {
+        strapi.log.warn(
+          `[strapi-auto-uuid] Invalid prefix "${rawPrefix}" on ${modelUid}.${fieldName} (must match ${PREFIX_REGEX}) – ignored.`
+        );
+      }
+    }
     return {
       version: opts['uuid-version'] || config.defaultVersion,
-      prefix: opts['uuid-prefix'] || '',
+      prefix,
       disableAutoGenerate: opts['disable-auto-generate'] === true,
       allowEdit: opts['allow-edit'] === true,
     };
   };
 
   /**
-   * Finds all content types that use the uuid custom field.
-   * @returns {Object} Map of UIDs to arrays of { field, attribute } objects
+   * Finds all api:: content types that use the uuid custom field and
+   * warns when the underlying attribute has no DB-level unique constraint.
    */
   const findUuidModels = () => {
     return Object.keys(contentTypes).reduce((acc, key) => {
       const contentType = contentTypes[key];
 
-      if (!key.startsWith('api')) return acc;
+      if (!key.startsWith('api::')) return acc;
 
       const uuidFields = Object.keys(contentType.attributes)
         .filter((attrKey) => {
           const attribute = contentType.attributes[attrKey];
           return attribute.customField === 'plugin::field-uuid.uuid';
         })
-        .map((attrKey) => ({
-          field: attrKey,
-          attribute: contentType.attributes[attrKey],
-        }));
+        .map((attrKey) => {
+          const attribute = contentType.attributes[attrKey];
+          if (!attribute.unique) {
+            strapi.log.warn(
+              `[strapi-auto-uuid] ${key}.${attrKey} has no DB 'unique' constraint. Uniqueness is only enforced by lifecycle hooks; under concurrency a race condition can produce duplicates. Enable "Unique" in the Content-Type Builder.`
+            );
+          }
+          return { field: attrKey, attribute };
+        });
 
       if (uuidFields.length > 0) {
         return { ...acc, [key]: uuidFields };
@@ -103,27 +143,22 @@ const bootstrap = ({ strapi }) => {
   }
 
   /**
-   * Checks if a UUID already exists in the database.
-   * @param {string} uid - Content type UID
-   * @param {string} field - Field name
-   * @param {string} uuid - UUID value to check
-   * @param {string|null} excludeDocumentId - documentId to exclude (for updates)
-   * @returns {Promise<{exists: boolean, documentId: string|null}>}
+   * Checks if a UUID already exists in the database across BOTH draft and
+   * published rows (uses db.query to bypass the draft-only default scope).
    */
   const checkUuidExists = async (uid, field, uuid, excludeDocumentId = null) => {
     if (!config.validateUniqueness) {
       return { exists: false, documentId: null };
     }
 
-    const filters = { [field]: uuid };
-
+    const where = { [field]: uuid };
     if (excludeDocumentId) {
-      filters.documentId = { $ne: excludeDocumentId };
+      where.documentId = { $ne: excludeDocumentId };
     }
 
-    const existing = await strapi.documents(uid).findFirst({
-      filters,
-      fields: ['documentId'],
+    const existing = await strapi.db.query(uid).findOne({
+      where,
+      select: ['documentId'],
     });
 
     return {
@@ -132,23 +167,11 @@ const bootstrap = ({ strapi }) => {
     };
   };
 
-  /**
-   * @returns {Promise<boolean>}
-   */
   const isUuidExists = async (uid, field, uuid, excludeDocumentId = null) => {
     const result = await checkUuidExists(uid, field, uuid, excludeDocumentId);
     return result.exists;
   };
 
-  /**
-   * Generates a unique UUID with retry logic for collision handling.
-   * @param {string} uid - Content type UID
-   * @param {string} field - Field name
-   * @param {string} [version] - UUID version override
-   * @param {string} [prefix] - UUID prefix override
-   * @returns {Promise<string>}
-   * @throws {ApplicationError} If unable to generate unique UUID after max attempts
-   */
   const generateUniqueUuid = async (uid, field, version, prefix) => {
     for (let attempt = 0; attempt < config.maxRetryAttempts; attempt++) {
       const newUuid = generateUuid(version, prefix);
@@ -173,14 +196,6 @@ const bootstrap = ({ strapi }) => {
     );
   };
 
-  /**
-   * Retrieves the documentId from the lifecycle event's where clause.
-   * In Strapi v5, lifecycle events provide documentId directly in where.
-   * Falls back to querying by numeric id via knex if needed.
-   * @param {string} uid - Content type UID
-   * @param {Object} where - The where clause from lifecycle params
-   * @returns {Promise<string|null>}
-   */
   const getDocumentIdFromWhere = async (uid, where) => {
     if (!where) return null;
 
@@ -208,10 +223,6 @@ const bootstrap = ({ strapi }) => {
   strapi.db.lifecycles.subscribe({
     models: modelsToSubscribe,
 
-    /**
-     * Before Create - Generates UUID if empty/invalid, validates uniqueness.
-     * Respects per-field options from CTB configuration.
-     */
     async beforeCreate(event) {
       const { model, params } = event;
       const uuidFields = models[model.uid];
@@ -223,7 +234,7 @@ const bootstrap = ({ strapi }) => {
       log.debug(`[strapi-auto-uuid] beforeCreate for ${model.uid}, documentId: ${currentDocumentId || 'none'}`);
 
       for (const { field, attribute } of uuidFields) {
-        const fieldOpts = getFieldOptions(attribute);
+        const fieldOpts = getFieldOptions(attribute, model.uid, field);
         const currentValue = params.data[field];
         const shouldAutoGenerate = config.autoGenerate && !fieldOpts.disableAutoGenerate;
 
@@ -246,7 +257,7 @@ const bootstrap = ({ strapi }) => {
               log.debug(`[strapi-auto-uuid] UUID exists, no documentId in params - keeping (likely publish)`);
             } else {
               log.info(
-                `[strapi-auto-uuid] UUID '${currentValue}' already exists for ${model.uid}.${field}, generating new one`
+                `[strapi-auto-uuid] UUID collision on ${model.uid}.${field}, regenerating`
               );
               params.data[field] = await generateUniqueUuid(model.uid, field, fieldOpts.version, fieldOpts.prefix);
             }
@@ -255,9 +266,6 @@ const bootstrap = ({ strapi }) => {
       }
     },
 
-    /**
-     * Before Update - Validates UUID changes don't create duplicates.
-     */
     async beforeUpdate(event) {
       const { model, params } = event;
       const uuidFields = models[model.uid];
@@ -274,8 +282,8 @@ const bootstrap = ({ strapi }) => {
 
         if (newValue && !validateUuid(newValue)) {
           throw new ValidationError(
-            `Invalid UUID format for field '${field}': '${newValue}'`,
-            { field, uuid: newValue }
+            `Invalid UUID format for field '${field}'`,
+            { field }
           );
         }
 
@@ -284,8 +292,8 @@ const bootstrap = ({ strapi }) => {
 
           if (exists) {
             throw new ValidationError(
-              `UUID '${newValue}' already exists for field '${field}'. Please use a unique value.`,
-              { field, uuid: newValue }
+              `UUID already exists for field '${field}'. Please use a unique value.`,
+              { field }
             );
           }
         }
@@ -294,7 +302,17 @@ const bootstrap = ({ strapi }) => {
   });
 
   if (config.autoMigrate && modelsToSubscribe.length > 0) {
-    log.info('[strapi-auto-uuid] Auto-migration enabled, checking for issues...');
+    const isProd = process.env.NODE_ENV === 'production';
+    const prodGate = process.env.STRAPI_AUTO_UUID_ALLOW_PRODUCTION_MIGRATE === 'true';
+
+    if (isProd && !prodGate) {
+      strapi.log.error(
+        '[strapi-auto-uuid] ⛔ autoMigrate refused in production. Set STRAPI_AUTO_UUID_ALLOW_PRODUCTION_MIGRATE=true to override.'
+      );
+      return;
+    }
+
+    strapi.log.warn('[strapi-auto-uuid] ⚠️  AUTO-MIGRATION ACTIVE — will rewrite UUIDs on boot');
 
     setImmediate(async () => {
       try {
@@ -302,9 +320,9 @@ const bootstrap = ({ strapi }) => {
         const status = await migrations.checkMigrationStatus();
 
         if (status.needsMigration) {
-          log.warn(`[strapi-auto-uuid] Found ${status.totalFields} field(s) with issues, running auto-fix...`);
+          strapi.log.warn(`[strapi-auto-uuid] Found ${status.totalFields} field(s) with issues, running auto-fix...`);
           const result = await migrations.runMigration({ dryRun: false });
-          log.info(`[strapi-auto-uuid] Auto-migration completed: ${result.totalFixed} entries fixed`);
+          strapi.log.warn(`[strapi-auto-uuid] Auto-migration completed: ${result.totalFixed} entries fixed`);
         } else {
           log.info('[strapi-auto-uuid] No migration needed, all UUIDs are valid');
         }

@@ -1,6 +1,13 @@
 import { errors } from '@strapi/utils';
+import {
+  checkDuplicateSchema,
+  dryRunOnlySchema,
+  migrationRunSchema,
+  importMappingsSchema,
+  parseBody,
+} from './validation';
 
-const { ValidationError } = errors;
+const { ValidationError, ApplicationError } = errors;
 
 const PLUGIN_VERSION = '1.1.0';
 
@@ -9,17 +16,17 @@ const PLUGIN_VERSION = '1.1.0';
  *
  * Provides endpoints for health check, UUID validation, diagnosis, auto-fix,
  * migration support, and statistics. All destructive endpoints require admin auth.
+ * All request bodies are validated with Zod before hitting services.
  */
 const controller = ({ strapi }) => ({
   /**
    * @route GET /field-uuid/health
-   * @returns {{ status, plugin, version, message }}
+   * @returns {{ status, plugin, message }}
    */
   async index(ctx) {
     ctx.body = {
       status: 'ok',
       plugin: 'field-uuid',
-      version: PLUGIN_VERSION,
       message: 'Strapi Auto UUID Plugin is running',
     };
   },
@@ -31,11 +38,10 @@ const controller = ({ strapi }) => ({
    * @throws {ValidationError} If input is missing or invalid
    */
   async checkDuplicate(ctx) {
-    const { contentType, field, uuid, excludeDocumentId } = ctx.request.body;
-
-    if (!contentType || !field || !uuid) {
-      throw new ValidationError('Missing required parameters: contentType, field, uuid');
-    }
+    const { contentType, field, uuid, excludeDocumentId } = parseBody(
+      checkDuplicateSchema,
+      ctx.request.body
+    );
 
     const serviceInstance = strapi.plugin('field-uuid').service('service');
     const validation = serviceInstance.validateUuidField(contentType, field);
@@ -54,7 +60,7 @@ const controller = ({ strapi }) => ({
       ctx.body = result;
     } catch (error) {
       strapi.log.error('[strapi-auto-uuid] Error checking duplicate:', error);
-      throw new errors.ApplicationError('Failed to check UUID duplicate');
+      throw new ApplicationError('Failed to check UUID duplicate');
     }
   },
 
@@ -68,7 +74,7 @@ const controller = ({ strapi }) => ({
       ctx.body = report;
     } catch (error) {
       strapi.log.error('[strapi-auto-uuid] Error during diagnosis:', error);
-      throw new errors.ApplicationError('Failed to diagnose UUIDs');
+      throw new ApplicationError('Failed to diagnose UUIDs');
     }
   },
 
@@ -78,23 +84,20 @@ const controller = ({ strapi }) => ({
    * @returns {Object} Fix report
    */
   async autofix(ctx) {
-    const { dryRun = false } = ctx.request.body || {};
-
-    if (typeof dryRun !== 'boolean') {
-      throw new ValidationError('dryRun must be a boolean');
-    }
+    const { dryRun } = parseBody(dryRunOnlySchema, ctx.request.body);
+    const actor = ctx.state?.user?.id ?? 'unknown';
 
     try {
       const report = await strapi.plugin('field-uuid').service('service').autofix({ dryRun });
 
       if (!dryRun && report.totalFixed > 0) {
-        strapi.log.info(`[strapi-auto-uuid] Auto-fix completed: ${report.totalFixed} duplicate(s) fixed`);
+        strapi.log.warn(`[strapi-auto-uuid] AUDIT autofix by admin:${actor} — fixed=${report.totalFixed}`);
       }
 
       ctx.body = report;
     } catch (error) {
       strapi.log.error('[strapi-auto-uuid] Error during auto-fix:', error);
-      throw new errors.ApplicationError('Failed to auto-fix UUIDs');
+      throw new ApplicationError('Failed to auto-fix UUIDs');
     }
   },
 
@@ -104,23 +107,20 @@ const controller = ({ strapi }) => ({
    * @returns {Object} Generation report
    */
   async generateMissing(ctx) {
-    const { dryRun = false } = ctx.request.body || {};
-
-    if (typeof dryRun !== 'boolean') {
-      throw new ValidationError('dryRun must be a boolean');
-    }
+    const { dryRun } = parseBody(dryRunOnlySchema, ctx.request.body);
+    const actor = ctx.state?.user?.id ?? 'unknown';
 
     try {
       const report = await strapi.plugin('field-uuid').service('service').generateMissing({ dryRun });
 
       if (!dryRun && report.totalGenerated > 0) {
-        strapi.log.info(`[strapi-auto-uuid] Generated ${report.totalGenerated} missing UUID(s)`);
+        strapi.log.warn(`[strapi-auto-uuid] AUDIT generate-missing by admin:${actor} — generated=${report.totalGenerated}`);
       }
 
       ctx.body = report;
     } catch (error) {
       strapi.log.error('[strapi-auto-uuid] Error generating missing UUIDs:', error);
-      throw new errors.ApplicationError('Failed to generate missing UUIDs');
+      throw new ApplicationError('Failed to generate missing UUIDs');
     }
   },
 
@@ -134,7 +134,7 @@ const controller = ({ strapi }) => ({
       ctx.body = { models };
     } catch (error) {
       strapi.log.error('[strapi-auto-uuid] Error getting models:', error);
-      throw new errors.ApplicationError('Failed to get UUID models');
+      throw new ApplicationError('Failed to get UUID models');
     }
   },
 
@@ -148,7 +148,7 @@ const controller = ({ strapi }) => ({
       ctx.body = status;
     } catch (error) {
       strapi.log.error('[strapi-auto-uuid] Error checking migration status:', error);
-      throw new errors.ApplicationError('Failed to check migration status');
+      throw new ApplicationError('Failed to check migration status');
     }
   },
 
@@ -158,17 +158,11 @@ const controller = ({ strapi }) => ({
    * @returns {Object} Migration result
    */
   async runMigration(ctx) {
-    const {
-      dryRun = true,
-      fixEmpty = true,
-      fixInvalid = true,
-      fixDuplicates = true,
-    } = ctx.request.body || {};
-
-    if (typeof dryRun !== 'boolean' || typeof fixEmpty !== 'boolean' ||
-        typeof fixInvalid !== 'boolean' || typeof fixDuplicates !== 'boolean') {
-      throw new ValidationError('All options must be booleans');
-    }
+    const { dryRun, fixEmpty, fixInvalid, fixDuplicates } = parseBody(
+      migrationRunSchema,
+      ctx.request.body
+    );
+    const actor = ctx.state?.user?.id ?? 'unknown';
 
     try {
       const result = await strapi.plugin('field-uuid').service('migrations').runMigration({
@@ -179,13 +173,15 @@ const controller = ({ strapi }) => ({
       });
 
       if (!dryRun && result.totalFixed > 0) {
-        strapi.log.info(`[strapi-auto-uuid] Migration completed: ${result.totalFixed} entries fixed`);
+        strapi.log.warn(
+          `[strapi-auto-uuid] AUDIT migration by admin:${actor} — fixed=${result.totalFixed} (empty=${result.fixed.empty}, invalid=${result.fixed.invalid}, duplicates=${result.fixed.duplicates})`
+        );
       }
 
       ctx.body = result;
     } catch (error) {
       strapi.log.error('[strapi-auto-uuid] Error running migration:', error);
-      throw new errors.ApplicationError('Failed to run migration');
+      throw new ApplicationError('Failed to run migration');
     }
   },
 
@@ -194,15 +190,17 @@ const controller = ({ strapi }) => ({
    * @returns {Object} Export data (JSON download)
    */
   async exportMappings(ctx) {
+    const actor = ctx.state?.user?.id ?? 'unknown';
     try {
       const exportData = await strapi.plugin('field-uuid').service('migrations').exportMappings();
+      strapi.log.warn(`[strapi-auto-uuid] AUDIT export by admin:${actor}`);
 
       ctx.set('Content-Type', 'application/json');
       ctx.set('Content-Disposition', `attachment; filename="uuid-mappings-${Date.now()}.json"`);
       ctx.body = exportData;
     } catch (error) {
       strapi.log.error('[strapi-auto-uuid] Error exporting mappings:', error);
-      throw new errors.ApplicationError('Failed to export UUID mappings');
+      throw new ApplicationError('Failed to export UUID mappings');
     }
   },
 
@@ -212,25 +210,25 @@ const controller = ({ strapi }) => ({
    * @returns {Object} Import result
    */
   async importMappings(ctx) {
-    const { mappings, dryRun = true, overwrite = false } = ctx.request.body || {};
-
-    if (!mappings || typeof mappings !== 'object') {
-      throw new ValidationError('Missing or invalid required parameter: mappings');
-    }
-
-    if (typeof dryRun !== 'boolean' || typeof overwrite !== 'boolean') {
-      throw new ValidationError('dryRun and overwrite must be booleans');
-    }
+    const { mappings, dryRun, overwrite } = parseBody(importMappingsSchema, ctx.request.body);
+    const actor = ctx.state?.user?.id ?? 'unknown';
 
     try {
       const result = await strapi.plugin('field-uuid').service('migrations').importMappings(
         mappings,
-        { dryRun, overwrite }
+        { dryRun, overwrite, actor }
       );
+
+      if (!dryRun && result.imported > 0) {
+        strapi.log.warn(
+          `[strapi-auto-uuid] AUDIT import by admin:${actor} — imported=${result.imported} overwrite=${overwrite}`
+        );
+      }
+
       ctx.body = result;
     } catch (error) {
       strapi.log.error('[strapi-auto-uuid] Error importing mappings:', error);
-      throw new errors.ApplicationError('Failed to import UUID mappings');
+      throw new ApplicationError('Failed to import UUID mappings');
     }
   },
 
@@ -261,7 +259,7 @@ const controller = ({ strapi }) => ({
       ctx.body = stats;
     } catch (error) {
       strapi.log.error('[strapi-auto-uuid] Error getting stats:', error);
-      throw new errors.ApplicationError('Failed to get UUID statistics');
+      throw new ApplicationError('Failed to get UUID statistics');
     }
   },
 });
