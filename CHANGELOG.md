@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/Schero94/strapi-auto-uuid/compare/v1.0.3...v1.1.0) (2026-04-21)
+
+
+### Features
+
+* **security:** zod validation, rbac, rate-limiting, audit logs ([05cfed0](https://github.com/Schero94/strapi-auto-uuid/commit/05cfed0651ceb70e0b09a60fd403c2d26c24ee2d))
+
 ## [1.0.3](https://github.com/Schero94/strapi-auto-uuid/compare/v1.0.2...v1.0.3) (2026-04-15)
 
 
