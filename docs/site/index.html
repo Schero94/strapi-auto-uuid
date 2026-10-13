@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Documentation for the Strapi Auto UUID custom-field plugin."
+    />
+    <title>Auto UUID | Strapi plugin</title>
+    <link rel="stylesheet" href="./site.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="#top" aria-label="Auto UUID home">
+          <span class="brand-mark" aria-hidden="true">ID</span>
+          <span>Auto UUID</span>
+        </a>
+        <div class="top-links">
+          <a href="https://github.com/Schero94/strapi-auto-uuid">GitHub</a>
+          <a href="https://www.npmjs.com/package/strapi-auto-uuid-v5">npm</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="hero-wrap" id="top">
+      <section class="hero" aria-labelledby="page-title">
+        <div class="hero-copy">
+          <span class="eyebrow">Strapi 5 custom field</span>
+          <h1 id="page-title">UUIDs for your content types</h1>
+          <p>
+            Auto UUID registers a string custom field and can generate UUID v4 and UUID v7 values.
+            Admin tools help inspect and manage UUID data.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="#install">Install the plugin</a>
+            <a class="button" href="https://github.com/Schero94/strapi-auto-uuid">View source</a>
+          </div>
+          <div class="badges" aria-label="Compatibility and package details">
+            <span class="badge">Strapi 5</span>
+            <span class="badge">UUID v4 and v7</span>
+            <span class="badge">MIT</span>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <main class="layout" id="main-content">
+      <nav class="side-nav" aria-label="Documentation sections">
+        <a href="#features">Features</a>
+        <a href="#install">Install</a>
+        <a href="#configuration">Configuration</a>
+        <a href="#security">Security</a>
+        <a href="#api">API</a>
+        <a href="#releases">Releases</a>
+      </nav>
+
+      <div class="content">
+        <section class="section" id="features">
+          <h2>Features</h2>
+          <p class="section-lead">
+            Add UUID values to Strapi content types and manage them from the admin panel.
+          </p>
+          <div class="card-grid">
+            <article class="card">
+              <h3>UUID v4 and v7</h3>
+              <p>
+                Generate random v4 values or time-sortable v7 values. A field can also set a prefix.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Custom field options</h3>
+              <p>
+                Choose the UUID version, disable automatic generation, allow editing, or mark a
+                field private.
+              </p>
+            </article>
+            <article class="card">
+              <h3>UUID management</h3>
+              <p>
+                Review UUID status, diagnose duplicates and invalid or empty values, and generate or
+                repair values.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Migration tools</h3>
+              <p>
+                Check migration status and run selected fixes. Export and import UUID mappings as
+                JSON.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="install">
+          <h2>Install</h2>
+          <p class="section-lead">
+            The package supports Strapi 5 through its <code>@strapi/strapi</code> peer dependency.
+            The package does not declare a Node.js engine range; its release workflow builds on
+            Node.js 22.
+          </p>
+          <div class="code-card">
+            <div class="code-label"><span>Terminal</span><span>npm</span></div>
+            <pre><code>npm install strapi-auto-uuid-v5</code></pre>
+          </div>
+          <p>Enable the plugin in <code>config/plugins.js</code>:</p>
+          <div class="code-card">
+            <div class="code-label"><span>config/plugins.js</span></div>
+            <pre><code>module.exports = {
+  'field-uuid': {
+    enabled: true,
+    config: {},
+  },
+};</code></pre>
+          </div>
+          <p>Then add the UUID custom field to a content type in Strapi's Content-Type Builder.</p>
+        </section>
+
+        <section class="section" id="configuration">
+          <h2>Configuration</h2>
+          <p class="section-lead">
+            Plugin defaults belong under the <code>field-uuid</code> key in
+            <code>config/plugins.js</code>. Per-field options are set in Content-Type Builder.
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Setting</th>
+                  <th scope="col">Purpose</th>
+                  <th scope="col">Default</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>defaultVersion</code></td>
+                  <td>Default UUID version, <code>v4</code> or <code>v7</code>.</td>
+                  <td><code>v4</code></td>
+                </tr>
+                <tr>
+                  <td><code>autoGenerate</code></td>
+                  <td>Generate a value on create unless disabled for the field.</td>
+                  <td><code>true</code></td>
+                </tr>
+                <tr>
+                  <td><code>validateUniqueness</code></td>
+                  <td>Check UUID uniqueness during lifecycle operations.</td>
+                  <td><code>true</code></td>
+                </tr>
+                <tr>
+                  <td><code>maxRetryAttempts</code></td>
+                  <td>Maximum attempts when generating a value that avoids a collision.</td>
+                  <td><code>3</code></td>
+                </tr>
+                <tr>
+                  <td><code>autoMigrate</code></td>
+                  <td>Run migration fixes during startup.</td>
+                  <td><code>false</code></td>
+                </tr>
+                <tr>
+                  <td><code>logLevel</code></td>
+                  <td>
+                    Logging level: <code>debug</code>, <code>info</code>, <code>warn</code>, or
+                    <code>error</code>.
+                  </td>
+                  <td><code>info</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            Field options include UUID version, prefix, disable automatic generation, allow editing,
+            and private. A private field is omitted from API responses.
+          </p>
+          <aside class="callout warning">
+            <strong>Startup migration:</strong> <code>autoMigrate</code> can change stored values.
+            It is off by default. In production, the plugin refuses automatic migration unless
+            <code>STRAPI_AUTO_UUID_ALLOW_PRODUCTION_MIGRATE=true</code> is set.
+          </aside>
+        </section>
+
+        <section class="section" id="security">
+          <h2>Security and permissions</h2>
+          <p class="section-lead">
+            The plugin defines no public content API routes. Its management routes use Strapi admin
+            authentication and route-specific permissions.
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Permission</th>
+                  <th scope="col">Operations</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>plugin::field-uuid.read</code></td>
+                  <td>Models, statistics, diagnosis, migration status, and duplicate checks.</td>
+                </tr>
+                <tr>
+                  <td><code>plugin::field-uuid.migrate</code></td>
+                  <td>Auto-fix, generate missing values, and run migration fixes.</td>
+                </tr>
+                <tr>
+                  <td><code>plugin::field-uuid.export</code></td>
+                  <td>Export UUID mappings.</td>
+                </tr>
+                <tr>
+                  <td><code>plugin::field-uuid.import</code></td>
+                  <td>Import UUID mappings.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            The health route requires an authenticated administrator. Other admin routes also
+            require the matching plugin permission. Selected operations have per-user in-memory rate
+            limits. Review a dry run and back up data before applying migrations or imports.
+          </p>
+        </section>
+
+        <section class="section" id="api">
+          <h2>Admin API</h2>
+          <p class="section-lead">
+            These route paths are registered as Strapi admin routes. All require admin
+            authentication. Except for health, each route also requires its listed plugin
+            permission.
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Method and path</th>
+                  <th scope="col">Permission</th>
+                  <th scope="col">Purpose</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>GET /health</code></td>
+                  <td>Admin authentication</td>
+                  <td>Check plugin status.</td>
+                </tr>
+                <tr>
+                  <td><code>POST /check-duplicate</code></td>
+                  <td><code>read</code></td>
+                  <td>Validate a UUID against a content type and field.</td>
+                </tr>
+                <tr>
+                  <td><code>GET /diagnose</code></td>
+                  <td><code>read</code></td>
+                  <td>Return UUID diagnosis results.</td>
+                </tr>
+                <tr>
+                  <td><code>GET /models</code>, <code>GET /stats</code></td>
+                  <td><code>read</code></td>
+                  <td>List UUID models and summary statistics.</td>
+                </tr>
+                <tr>
+                  <td><code>GET /migration/status</code></td>
+                  <td><code>read</code></td>
+                  <td>Check migration status.</td>
+                </tr>
+                <tr>
+                  <td><code>POST /autofix</code>, <code>POST /generate-missing</code></td>
+                  <td><code>migrate</code></td>
+                  <td>Repair duplicates or generate missing values. Accept <code>dryRun</code>.</td>
+                </tr>
+                <tr>
+                  <td><code>POST /migration/run</code></td>
+                  <td><code>migrate</code></td>
+                  <td>
+                    Run selected fixes with <code>dryRun</code>, <code>fixEmpty</code>,
+                    <code>fixInvalid</code>, and <code>fixDuplicates</code>.
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>GET /migration/export</code></td>
+                  <td><code>export</code></td>
+                  <td>Download UUID mappings as JSON.</td>
+                </tr>
+                <tr>
+                  <td><code>POST /migration/import</code></td>
+                  <td><code>import</code></td>
+                  <td>
+                    Import mappings with <code>dryRun</code> and <code>overwrite</code> options.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="section" id="releases">
+          <h2>Releases and testing</h2>
+          <p class="section-lead">
+            The repository uses Conventional Commits and semantic-release on pushes to
+            <code>main</code>. The workflow runs <code>npm ci</code>, tests, build, and package
+            verification before release. NPM publishing remains enabled and uses the repository's
+            <code>NPM_TOKEN</code> secret.
+          </p>
+          <p>For local checks, run:</p>
+          <div class="code-card">
+            <div class="code-label"><span>Terminal</span><span>Node.js</span></div>
+            <pre><code>npm ci
+npm test
+npm run build
+npm run verify</code></pre>
+          </div>
+          <div class="link-list">
+            <a href="https://github.com/Schero94/strapi-auto-uuid">GitHub repository</a>
+            <a href="https://www.npmjs.com/package/strapi-auto-uuid-v5">npm package</a>
+            <a href="https://github.com/Schero94/strapi-auto-uuid/releases">Releases</a>
+            <a href="https://github.com/Schero94/strapi-auto-uuid/blob/main/README.md">README</a>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <p>Strapi Auto UUID is released under the MIT License.</p>
+      <p><a href="https://github.com/Schero94/strapi-auto-uuid">Source and issue tracker</a></p>
+    </footer>
+  </body>
+</html>

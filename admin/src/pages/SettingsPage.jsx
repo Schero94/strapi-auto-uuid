@@ -134,7 +134,7 @@ const SectionTitle = styled.h2`
   gap: 8px;
 `;
 
-const ActionCard = styled(Box)`
+const ActionCard = styled.button`
   background: ${props => props.theme.colors.neutral0};
   border: 2px solid ${props => props.theme.colors.neutral200};
   border-radius: 16px;
@@ -142,8 +142,17 @@ const ActionCard = styled(Box)`
   transition: all 0.25s ease;
   cursor: pointer;
   height: 100%;
+  width: 100%;
   display: flex;
   flex-direction: column;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+
+  &:focus-visible {
+    outline: 3px solid ${props => props.theme.colors.primary600};
+    outline-offset: 3px;
+  }
   
   &:hover {
     border-color: ${props => props.$color || '#10B981'};
@@ -152,7 +161,7 @@ const ActionCard = styled(Box)`
   }
 `;
 
-const ActionIcon = styled.div`
+const ActionIcon = styled.span`
   width: 56px;
   height: 56px;
   border-radius: 14px;
@@ -169,7 +178,7 @@ const ActionIcon = styled.div`
   }
 `;
 
-const ActionTitle = styled.h3`
+const ActionTitle = styled.span`
   font-size: 18px;
   font-weight: 700;
   color: ${props => props.theme.colors.neutral800};
@@ -177,7 +186,7 @@ const ActionTitle = styled.h3`
   line-height: 1.3;
 `;
 
-const ActionDescription = styled.p`
+const ActionDescription = styled.span`
   font-size: 14px;
   color: ${props => props.theme.colors.neutral600};
   margin: 0;
@@ -187,7 +196,7 @@ const ActionDescription = styled.p`
 
 const ActionGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   gap: 24px;
   margin-bottom: 32px;
 `;
@@ -704,7 +713,7 @@ const SettingsPage = () => {
         </SectionTitle>
         
         <ActionGrid>
-          <ActionCard onClick={runDiagnose} $color="#3B82F6">
+          <ActionCard type="button" onClick={runDiagnose} $color="#3B82F6">
             <ActionIcon $bg="#DBEAFE" $color="#2563EB">
               <Search />
             </ActionIcon>
@@ -716,7 +725,7 @@ const SettingsPage = () => {
             </ActionDescription>
           </ActionCard>
 
-          <ActionCard onClick={() => { setDryRun(true); setFixReport(null); setShowFixModal(true); }} $color="#F59E0B">
+          <ActionCard type="button" onClick={() => { setDryRun(true); setFixReport(null); setShowFixModal(true); }} $color="#F59E0B">
             <ActionIcon $bg="#FEF3C7" $color="#D97706">
               <Cog />
             </ActionIcon>
@@ -728,7 +737,7 @@ const SettingsPage = () => {
             </ActionDescription>
           </ActionCard>
 
-          <ActionCard onClick={() => { setDryRun(true); setFixReport(null); setShowGenerateModal(true); }} $color="#10B981">
+          <ActionCard type="button" onClick={() => { setDryRun(true); setFixReport(null); setShowGenerateModal(true); }} $color="#10B981">
             <ActionIcon $bg="#DCFCE7" $color="#16A34A">
               <Plus />
             </ActionIcon>
@@ -740,7 +749,7 @@ const SettingsPage = () => {
             </ActionDescription>
           </ActionCard>
 
-          <ActionCard onClick={() => { setDryRun(true); setFixReport(null); setShowMigrationModal(true); }} $color="#8B5CF6">
+          <ActionCard type="button" onClick={() => { setDryRun(true); setFixReport(null); setShowMigrationModal(true); }} $color="#8B5CF6">
             <ActionIcon $bg="#EDE9FE" $color="#7C3AED">
               <Play />
             </ActionIcon>
@@ -752,7 +761,7 @@ const SettingsPage = () => {
             </ActionDescription>
           </ActionCard>
 
-          <ActionCard onClick={exportMappings} $color="#06B6D4">
+          <ActionCard type="button" onClick={exportMappings} $color="#06B6D4">
             <ActionIcon $bg="#CFFAFE" $color="#0891B2">
               <Download />
             </ActionIcon>
@@ -764,7 +773,7 @@ const SettingsPage = () => {
             </ActionDescription>
           </ActionCard>
 
-          <ActionCard onClick={() => { setDryRun(true); setImportData(''); setShowImportModal(true); }} $color="#EC4899">
+          <ActionCard type="button" onClick={() => { setDryRun(true); setImportData(''); setShowImportModal(true); }} $color="#EC4899">
             <ActionIcon $bg="#FCE7F3" $color="#DB2777">
               <Upload />
             </ActionIcon>

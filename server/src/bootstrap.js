@@ -101,6 +101,12 @@ const bootstrap = async ({ strapi }) => {
     };
   };
 
+  const isValidFieldUuid = (value, prefix) => {
+    if (typeof value !== 'string') return false;
+    const rawUuid = prefix && value.startsWith(prefix) ? value.slice(prefix.length) : value;
+    return validateUuid(rawUuid);
+  };
+
   /**
    * Finds all api:: content types that use the uuid custom field and
    * warns when the underlying attribute has no DB-level unique constraint.
@@ -237,10 +243,16 @@ const bootstrap = async ({ strapi }) => {
         const fieldOpts = getFieldOptions(attribute, model.uid, field);
         const currentValue = params.data[field];
         const shouldAutoGenerate = config.autoGenerate && !fieldOpts.disableAutoGenerate;
+        const isValidValue = currentValue && isValidFieldUuid(currentValue, fieldOpts.prefix);
 
-        if ((!currentValue || !validateUuid(currentValue)) && shouldAutoGenerate) {
+        if ((!currentValue || !isValidValue) && shouldAutoGenerate) {
           params.data[field] = await generateUniqueUuid(model.uid, field, fieldOpts.version, fieldOpts.prefix);
           log.debug(`[strapi-auto-uuid] Generated UUID for ${model.uid}.${field}`);
+        } else if (currentValue && !isValidValue) {
+          throw new ValidationError(
+            `Invalid UUID format for field '${field}'`,
+            { field }
+          );
         } else if (currentValue && config.validateUniqueness) {
           const { exists, documentId: existingDocumentId } = await checkUuidExists(
             model.uid,
@@ -275,16 +287,38 @@ const bootstrap = async ({ strapi }) => {
       const documentId = await getDocumentIdFromWhere(model.uid, params.where);
       if (!documentId) return;
 
-      for (const { field } of uuidFields) {
+      for (const { field, attribute } of uuidFields) {
         if (params.data[field] === undefined) continue;
 
         const newValue = params.data[field];
+        const fieldOpts = getFieldOptions(attribute, model.uid, field);
 
-        if (newValue && !validateUuid(newValue)) {
+        if (newValue && !isValidFieldUuid(newValue, fieldOpts.prefix)) {
           throw new ValidationError(
             `Invalid UUID format for field '${field}'`,
             { field }
           );
+        }
+
+        if (!fieldOpts.allowEdit) {
+          const currentRecord = await strapi.db.query(model.uid).findOne({
+            where: { documentId },
+            select: [field],
+          });
+
+          if (!currentRecord) {
+            throw new ValidationError(
+              `Unable to verify the existing value of immutable UUID field '${field}'`,
+              { field }
+            );
+          }
+
+          if (currentRecord[field] && currentRecord[field] !== newValue) {
+            throw new ValidationError(
+              `UUID field '${field}' is immutable. Enable manual editing in the field options to change it.`,
+              { field }
+            );
+          }
         }
 
         if (newValue && config.validateUniqueness) {

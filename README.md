@@ -1,5 +1,7 @@
 # Strapi Auto UUID
 
+Project site: [Auto UUID documentation](https://schero94.github.io/strapi-auto-uuid/)
+
 [![NPM Version](https://img.shields.io/npm/v/strapi-auto-uuid-v5.svg)](https://www.npmjs.com/package/strapi-auto-uuid-v5)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Strapi v5](https://img.shields.io/badge/Strapi-v5-blue.svg)](https://strapi.io)
