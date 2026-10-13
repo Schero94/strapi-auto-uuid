@@ -298,14 +298,14 @@
           <h2>Releases and testing</h2>
           <p class="section-lead">
             The repository uses Conventional Commits and semantic-release on pushes to
-            <code>main</code>. The workflow runs <code>npm ci</code>, tests, build, and package
+            <code>main</code>. The workflow runs <code>npm ci --legacy-peer-deps</code>, tests, build, and package
             verification before release. NPM publishing remains enabled and uses the repository's
             <code>NPM_TOKEN</code> secret.
           </p>
           <p>For local checks, run:</p>
           <div class="code-card">
             <div class="code-label"><span>Terminal</span><span>Node.js</span></div>
-            <pre><code>npm ci
+            <pre><code>npm ci --legacy-peer-deps
 npm test
 npm run build
 npm run verify</code></pre>

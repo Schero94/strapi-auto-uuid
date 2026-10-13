@@ -11,7 +11,7 @@
         "pkgRoot": "."
       }
     ],
-    ["@semantic-release/github", { "labels": false }],
+    ["@semantic-release/github", { "labels": false, "successComment": false }],
     [
       "@semantic-release/git",
       {
