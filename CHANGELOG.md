@@ -1,3 +1,15 @@
+# [2.1.0](https://github.com/Schero94/strapi-auto-uuid/compare/v2.0.0...v2.1.0) (2026-11-07)
+
+
+### Bug Fixes
+
+* keep repair and import values when an editor fills the same field ([c42e448](https://github.com/Schero94/strapi-auto-uuid/commit/c42e448571f13441088031e88e695e8599c39ebd))
+
+
+### Features
+
+* coordinate UUID writes, repairs and rate limits across instances ([3fe4100](https://github.com/Schero94/strapi-auto-uuid/commit/3fe4100a13093069a4a9494ed16e384a88b098e3))
+
 ## [Unreleased]
 
 Next release: **2.1.0** (minor). Auto UUID now works with several Strapi
