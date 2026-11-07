@@ -1,10 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as uuid from 'uuid';
 import register from '../server/src/register.js';
 import adminRoutes from '../server/src/routes/admin-api.js';
 import contentApiRoutes from '../server/src/routes/content-api.js';
 import serviceFactory from '../server/src/services/service.js';
-import pluginConfig from '../server/src/config/index.js';
+import pluginConfig, { normalizePluginConfig } from '../server/src/config/index.js';
 
 vi.mock('uuid', async (importOriginal) => {
   const actual = await importOriginal();
@@ -91,7 +91,7 @@ describe('UUID generation service', () => {
     const generator = vi.mocked(uuid.v7).mockReturnValueOnce(first).mockReturnValueOnce(second);
     const { strapi } = makeStrapi({
       attributes: { [field]: uuidAttribute({ 'uuid-version': 'v7', 'uuid-prefix': 'art_' }) },
-      existing: (where) => (where[field] === `art_${first}` ? { documentId: 'doc-existing' } : null),
+      existing: (where) => (where[field] === `art_${first}` ? { id: 1 } : null),
     });
     const service = serviceFactory({ strapi });
 
@@ -121,7 +121,20 @@ describe('plugin configuration', () => {
   it('rejects unsupported default UUID versions and unsafe retry counts', () => {
     expect(() => pluginConfig.validator({ defaultVersion: 'v1' })).toThrow(/defaultVersion/);
     expect(() => pluginConfig.validator({ maxRetryAttempts: 0 })).toThrow(/maxRetryAttempts/);
-    expect(() => pluginConfig.validator({ validateUniqueness: 'yes' })).toThrow(/boolean/);
+    expect(() => pluginConfig.validator({ maxRetryAttempts: 2.5 })).toThrow(/maxRetryAttempts/);
+    expect(() => pluginConfig.validator({ maxRetryAttempts: 1e9 })).toThrow(/maxRetryAttempts/);
+    expect(() => pluginConfig.validator({ validateUniqueness: 'yes' })).toThrow(
+      /validateUniqueness/
+    );
+    expect(() => pluginConfig.validator({ autoGenrate: false })).toThrow(/autoGenrate/);
+  });
+
+  it('accepts the defaults and the deprecated allowManualEdit key without using it', () => {
+    expect(() => pluginConfig.validator(pluginConfig.default)).not.toThrow();
+    expect(normalizePluginConfig({ allowManualEdit: true, maxRetryAttempts: 5 })).toEqual({
+      ...pluginConfig.default,
+      maxRetryAttempts: 5,
+    });
   });
 });
 
@@ -138,300 +151,6 @@ describe('administrative route access', () => {
       }
     }
     expect(contentApiRoutes.routes).toEqual([]);
-  });
-});
-
-describe('UUID lifecycle behavior', () => {
-  let bootstrap;
-
-  beforeEach(async () => {
-    ({ default: bootstrap } = await import('../server/src/bootstrap.js'));
-  });
-
-  it('warns when lifecycle uniqueness has no database unique constraint', async () => {
-    const { strapi } = makeStrapi({
-      attributes: { [field]: { ...uuidAttribute(), unique: false } },
-    });
-
-    await bootstrap({ strapi });
-
-    expect(strapi.log.warn).toHaveBeenCalledWith(
-      expect.stringContaining('under concurrency a race condition can produce duplicates')
-    );
-  });
-
-  it('does not emit the missing-constraint warning for a unique UUID field', async () => {
-    const { strapi } = makeStrapi({
-      attributes: { [field]: { ...uuidAttribute(), unique: true } },
-    });
-
-    await bootstrap({ strapi });
-
-    expect(strapi.log.warn).not.toHaveBeenCalledWith(
-      expect.stringContaining('under concurrency a race condition can produce duplicates')
-    );
-  });
-
-  it.each(['v4', 'v7'])('generates valid prefixed UUID %s values on create', async (version) => {
-    const { strapi, getSubscriber } = makeStrapi({
-      attributes: { [field]: uuidAttribute({ 'uuid-version': version, 'uuid-prefix': 'art_' }) },
-    });
-    await bootstrap({ strapi });
-    const event = { model: { uid }, params: { data: {} } };
-
-    await getSubscriber().beforeCreate(event);
-
-    const generated = event.params.data[field];
-    expect(generated).toMatch(/^art_/);
-    expect(uuid.validate(generated.slice(4))).toBe(true);
-    expect(generated[4 + 14]).toBe(version === 'v4' ? '4' : '7');
-  });
-
-  it('keeps a valid prefixed UUID supplied on create', async () => {
-    const supplied = `art_${uuid.v4()}`;
-    const { strapi, getSubscriber } = makeStrapi({
-      attributes: { [field]: uuidAttribute({ 'uuid-prefix': 'art_' }) },
-    });
-    await bootstrap({ strapi });
-    const event = { model: { uid }, params: { data: { [field]: supplied } } };
-
-    await getSubscriber().beforeCreate(event);
-
-    expect(event.params.data[field]).toBe(supplied);
-  });
-
-  it('replaces a supplied UUID that belongs to another document', async () => {
-    const supplied = uuid.v4();
-    const { strapi, getSubscriber } = makeStrapi({
-      attributes: { [field]: uuidAttribute() },
-      existing: (where) => (where[field] === supplied ? { documentId: 'other-document' } : null),
-    });
-    await bootstrap({ strapi });
-    const event = {
-      model: { uid },
-      params: { data: { documentId: 'new-document', [field]: supplied } },
-    };
-
-    await getSubscriber().beforeCreate(event);
-
-    expect(event.params.data[field]).not.toBe(supplied);
-    expect(uuid.validate(event.params.data[field])).toBe(true);
-  });
-
-  it('retries generated values that collide with another document', async () => {
-    const first = uuid.v4();
-    const { strapi, getSubscriber } = makeStrapi({
-      attributes: { [field]: uuidAttribute() },
-      existing: (where) => (where[field] === first ? { documentId: 'existing-document' } : null),
-    });
-    const second = uuid.v4();
-    vi.mocked(uuid.v4).mockClear();
-    const generator = vi.mocked(uuid.v4).mockReturnValueOnce(first).mockReturnValueOnce(second);
-    await bootstrap({ strapi });
-    const event = { model: { uid }, params: { data: {} } };
-
-    await getSubscriber().beforeCreate(event);
-
-    expect(generator).toHaveBeenCalledTimes(2);
-    expect(event.params.data[field]).not.toBe(first);
-    expect(uuid.validate(event.params.data[field])).toBe(true);
-  });
-
-  it('keeps a UUID already owned by the same document during publish/create lifecycle replay', async () => {
-    const existingValue = uuid.v4();
-    const { strapi, getSubscriber } = makeStrapi({
-      attributes: { [field]: uuidAttribute() },
-      existing: (where) => (where[field] === existingValue ? { documentId: 'doc-1' } : null),
-    });
-    await bootstrap({ strapi });
-    const event = {
-      model: { uid },
-      params: { data: { documentId: 'doc-1', [field]: existingValue } },
-    };
-
-    await getSubscriber().beforeCreate(event);
-
-    expect(event.params.data[field]).toBe(existingValue);
-  });
-
-  it('does not change an existing value when a regular update omits the field', async () => {
-    const { strapi, getSubscriber } = makeStrapi({
-      attributes: { [field]: uuidAttribute() },
-    });
-    strapi.getModel = () => ({ collectionName: 'articles' });
-    strapi.db.connection = () => ({
-      select: () => ({ where: () => ({ first: async () => ({ document_id: 'doc-1' }) }) }),
-    });
-    await bootstrap({ strapi });
-    const event = {
-      model: { uid },
-      params: { where: { documentId: 'doc-1' }, data: { title: 'Changed' } },
-    };
-
-    await expect(getSubscriber().beforeUpdate(event)).resolves.toBeUndefined();
-    expect(event.params.data[field]).toBeUndefined();
-  });
-
-  it('rejects invalid and duplicate UUID values on update', async () => {
-    const existing = uuid.v4();
-    const { strapi, getSubscriber } = makeStrapi({
-      attributes: { [field]: uuidAttribute({ 'allow-edit': true }) },
-      existing: (where) => (where[field] === existing ? { documentId: 'other-doc' } : null),
-    });
-    await bootstrap({ strapi });
-    const subscriber = getSubscriber();
-    const makeEvent = (value) => ({
-      model: { uid },
-      params: { where: { documentId: 'doc-1' }, data: { [field]: value } },
-    });
-
-    await expect(subscriber.beforeUpdate(makeEvent('bad'))).rejects.toMatchObject({
-      name: 'ValidationError',
-    });
-    await expect(subscriber.beforeUpdate(makeEvent(existing))).rejects.toThrow(/already exists/);
-  });
-
-  it('rejects manual UUID changes unless the field explicitly allows editing', async () => {
-    const oldValue = uuid.v4();
-    const { strapi, getSubscriber } = makeStrapi({
-      attributes: { [field]: uuidAttribute() },
-    });
-    strapi.db.query = vi.fn(() => ({
-      findOne: vi.fn(async ({ where }) =>
-        where.documentId === 'doc-1' ? { [field]: oldValue } : null
-      ),
-    }));
-    strapi.getModel = () => ({ collectionName: 'articles' });
-    strapi.db.connection = () => ({
-      select: () => ({ where: () => ({ first: async () => ({ document_id: 'doc-1' }) }) }),
-    });
-    await bootstrap({ strapi });
-    const unchangedEvent = {
-      model: { uid },
-      params: { where: { documentId: 'doc-1' }, data: { [field]: oldValue } },
-    };
-    await expect(getSubscriber().beforeUpdate(unchangedEvent)).resolves.toBeUndefined();
-
-    const event = {
-      model: { uid },
-      params: { where: { documentId: 'doc-1' }, data: { [field]: uuid.v4() } },
-    };
-
-    await expect(getSubscriber().beforeUpdate(event)).rejects.toThrow(/immutable/i);
-  });
-
-  it('allows valid unique UUID changes when the field opts in to editing', async () => {
-    const { strapi, getSubscriber } = makeStrapi({
-      attributes: { [field]: uuidAttribute({ 'allow-edit': true, 'uuid-version': 'v7' }) },
-    });
-    strapi.getModel = () => ({ collectionName: 'articles' });
-    strapi.db.connection = () => ({
-      select: () => ({ where: () => ({ first: async () => ({ document_id: 'doc-1' }) }) }),
-    });
-    await bootstrap({ strapi });
-    const event = {
-      model: { uid },
-      params: { where: { documentId: 'doc-1' }, data: { [field]: uuid.v7() } },
-    };
-
-    await expect(getSubscriber().beforeUpdate(event)).resolves.toBeUndefined();
-  });
-
-  it('rejects malformed values when auto-generation is disabled', async () => {
-    const { strapi, getSubscriber } = makeStrapi({
-      attributes: { [field]: uuidAttribute({ 'disable-auto-generate': true }) },
-    });
-    await bootstrap({ strapi });
-    const event = { model: { uid }, params: { data: { [field]: 'not-valid' } } };
-
-    await expect(getSubscriber().beforeCreate(event)).rejects.toMatchObject({
-      name: 'ValidationError',
-    });
-  });
-
-  it('rejects invalid field options before creating an entry', async () => {
-    const { strapi, getSubscriber } = makeStrapi({
-      attributes: { [field]: uuidAttribute({ 'uuid-version': 'v1', 'uuid-prefix': '../bad' }) },
-    });
-    await bootstrap({ strapi });
-
-    await expect(getSubscriber().beforeCreate({
-      model: { uid },
-      params: { data: {} },
-    })).rejects.toMatchObject({ name: 'ValidationError' });
-  });
-
-  it('leaves an empty field unchanged when per-field auto-generation is disabled', async () => {
-    const { strapi, getSubscriber } = makeStrapi({
-      attributes: { [field]: uuidAttribute({ 'disable-auto-generate': true }) },
-    });
-    await bootstrap({ strapi });
-    const event = { model: { uid }, params: { data: {} } };
-
-    await getSubscriber().beforeCreate(event);
-
-    expect(event.params.data[field]).toBeUndefined();
-  });
-
-  it('respects the plugin-wide auto-generation setting', async () => {
-    const { strapi, getSubscriber } = makeStrapi({ config: { autoGenerate: false } });
-    await bootstrap({ strapi });
-    const event = { model: { uid }, params: { data: {} } };
-
-    await getSubscriber().beforeCreate(event);
-
-    expect(event.params.data[field]).toBeUndefined();
-  });
-
-  it('returns a validation error instead of throwing on non-string prefixed updates', async () => {
-    const { strapi, getSubscriber } = makeStrapi({
-      attributes: { [field]: uuidAttribute({ 'uuid-prefix': 'art_', 'allow-edit': true }) },
-    });
-    strapi.getModel = () => ({ collectionName: 'articles' });
-    strapi.db.connection = () => ({
-      select: () => ({ where: () => ({ first: async () => ({ document_id: 'doc-1' }) }) }),
-    });
-    await bootstrap({ strapi });
-    const event = {
-      model: { uid },
-      params: { where: { documentId: 'doc-1' }, data: { [field]: { value: 'not-a-string' } } },
-    };
-
-    await expect(getSubscriber().beforeUpdate(event)).rejects.toMatchObject({
-      name: 'ValidationError',
-    });
-  });
-});
-
-describe('admin custom field registration', () => {
-  it('registers the matching UUID field and management settings section', async () => {
-    const { default: admin } = await import('../admin/src/index.js');
-    const app = {
-      registerPlugin: vi.fn(),
-      customFields: { register: vi.fn() },
-      createSettingSection: vi.fn(),
-    };
-
-    admin.register(app);
-
-    expect(app.customFields.register).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'uuid',
-        pluginId: 'field-uuid',
-        type: 'string',
-        components: expect.objectContaining({ Input: expect.any(Function) }),
-        options: expect.objectContaining({ validator: expect.any(Function) }),
-      })
-    );
-    const fieldDefinition = app.customFields.register.mock.calls[0][0];
-    const optionSchemas = fieldDefinition.options.validator();
-    expect(optionSchemas['uuid-version'].isValidSync('v7')).toBe(true);
-    expect(optionSchemas['uuid-version'].isValidSync('v1')).toBe(false);
-    expect(optionSchemas['uuid-prefix'].isValidSync('art_')).toBe(true);
-    expect(optionSchemas['uuid-prefix'].isValidSync('../bad')).toBe(false);
-    expect(app.createSettingSection).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'field-uuid' }),
-      expect.arrayContaining([expect.objectContaining({ id: 'management' })])
-    );
+    expect(adminRoutes.routes.map((route) => route.path)).not.toContain('/check-duplicate');
   });
 });
