@@ -11,6 +11,7 @@
  *   plugin::field-uuid.import  → POST /migration/import
  *
  * Expensive endpoints are additionally rate-limited (per-user, in-memory).
+ * GET /health only requires an authenticated administrator.
  */
 
 const policy = (action) => [
@@ -31,15 +32,6 @@ export default {
       handler: 'controller.index',
       config: {
         policies: ['admin::isAuthenticatedAdmin'],
-      },
-    },
-    {
-      method: 'POST',
-      path: '/check-duplicate',
-      handler: 'controller.checkDuplicate',
-      config: {
-        policies: policy('read'),
-        middlewares: rateLimit(30, 60_000),
       },
     },
     {

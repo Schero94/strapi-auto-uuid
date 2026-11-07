@@ -1,27 +1,41 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
-import * as uuidLib from 'uuid';
+import { Box, Button, Dialog, Field, Flex, IconButton, TextInput } from '@strapi/design-system';
+import { ArrowClockwise, Check, Duplicate } from '@strapi/icons';
+import { ConfirmDialog, useClipboard, useForm, useNotification } from '@strapi/strapi/admin';
+import { useMatch } from 'react-router-dom';
 import {
-  Field,
-  Flex,
-  IconButton,
-  TextInput,
-} from '@strapi/design-system';
-import { ArrowClockwise, Duplicate, Check } from '@strapi/icons';
+  generateUuidFieldValue,
+  isUuidFieldValue,
+  validateUuidFieldOptions,
+} from '../../../../shared/uuid-field.js';
+import { getTranslation } from '../../utils/getTranslation';
+import { createUuidInputActions, getUuidInputState } from './actions.js';
 
-const { v4: uuidv4, validate: validateUuid } = uuidLib;
-const uuidv7 = uuidLib.v7 || uuidv4;
+const MONO_STYLE = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' };
+
+// The Content Manager clone page (same pattern as CLONE_PATH in
+// @strapi/content-manager/admin/src/router).
+const CLONE_PATH = '/content-manager/:collectionType/:slug/clone/:origin';
+
+/** Reads a dotted form path (`meta.blockId`, `blocks.0.blockId`). */
+const getIn = (object, path) =>
+  String(path)
+    .split('.')
+    .reduce((current, key) => (current == null ? undefined : current[key]), object);
 
 /**
- * UUID Input Component for Strapi v5
+ * Content Manager input for the UUID custom field.
  *
- * Respects per-field CTB options:
- * - uuid-version: 'v4' (default) or 'v7'
- * - uuid-prefix: optional prefix string
- * - disable-auto-generate: if true, no auto-generation on mount
- * - allow-edit: if true, field is not read-only
+ * Honours the field options (version, prefix, auto-generation, manual
+ * editing). The server is authoritative: it generates missing values on save
+ * and validates every change, so this input never writes on mount.
+ *
+ * @param {Object} props Strapi custom field input props.
+ * @param {React.Ref<HTMLInputElement>} ref Forwarded input ref.
+ * @returns {JSX.Element} The field.
  */
-const Input = React.forwardRef((props, forwardedRef) => {
+const Input = forwardRef(function UuidInput(props, ref) {
   const {
     attribute,
     disabled,
@@ -36,155 +50,236 @@ const Input = React.forwardRef((props, forwardedRef) => {
   } = props;
 
   const { formatMessage } = useIntl();
-  const [invalidUUID, setInvalidUUID] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const { copy } = useClipboard();
+  const { toggleNotification } = useNotification();
   const [isCopied, setIsCopied] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  // The value the form was loaded with. Strapi's form updates
+  // `initialValues` after a save, so the confirmation before replacing a
+  // saved value keeps working without a reload. Outside a Strapi form (no
+  // context) the value at mount is used.
+  const [mountValue] = useState(value);
+  const initialValues = useForm('UuidInput', (form) => form.initialValues, false);
+  const savedValue = initialValues ? getIn(initialValues, name) : mountValue;
+  const isClone = Boolean(useMatch(CLONE_PATH));
+  const copiedTimer = useRef(null);
+  const generateButtonRef = useRef(null);
+  const handledOnMount = useRef(false);
+  useEffect(() => () => clearTimeout(copiedTimer.current), []);
 
-  const hasGeneratedRef = useRef(false);
-  const previousValueRef = useRef(value);
-
-  const fieldOptions = attribute?.options || {};
-  const uuidVersion = fieldOptions['uuid-version'] || 'v4';
-  const uuidPrefix = fieldOptions['uuid-prefix'] || '';
-  const disableAutoGenerate = fieldOptions['disable-auto-generate'] === true;
-  const allowEdit = fieldOptions['allow-edit'] === true;
-
-  const generateNewUuid = useCallback(() => {
-    const raw = uuidVersion === 'v7' ? uuidv7() : uuidv4();
-    return uuidPrefix ? `${uuidPrefix}${raw}` : raw;
-  }, [uuidVersion, uuidPrefix]);
-
-  const handleChange = useCallback((newValue) => {
-    onChange({ target: { name, type: attribute.type, value: newValue } });
-  }, [onChange, name, attribute.type]);
+  const version = attribute?.options?.['uuid-version'];
+  const prefix = attribute?.options?.['uuid-prefix'];
+  const disableAutoGenerate = attribute?.options?.['disable-auto-generate'];
+  const allowEdit = attribute?.options?.['allow-edit'];
+  const optionsResult = useMemo(
+    () =>
+      validateUuidFieldOptions({
+        'uuid-version': version,
+        'uuid-prefix': prefix,
+        'disable-auto-generate': disableAutoGenerate,
+        'allow-edit': allowEdit,
+      }),
+    [version, prefix, disableAutoGenerate, allowEdit]
+  );
+  const options = optionsResult.valid ? optionsResult.options : null;
+  // Fields inside components and dynamic zones have dotted names
+  // (`meta.blockId`, `blocks.0.blockId`). The server does not manage them, so
+  // the input fills them in the browser.
+  const inComponent = typeof name === 'string' && name.includes('.');
+  const state = getUuidInputState({
+    options,
+    savedValue,
+    value,
+    disabled,
+    inComponent,
+    isClone,
+  });
+  const attributeType = attribute?.type;
 
   useEffect(() => {
-    if (!value && !hasGeneratedRef.current && !disableAutoGenerate) {
-      hasGeneratedRef.current = true;
-      handleChange(generateNewUuid());
+    if (handledOnMount.current) return;
+    if (state.clearOnMount) {
+      handledOnMount.current = true;
+      onChange({ target: { name, type: attributeType, value: null } });
+    } else if (state.generateOnMount) {
+      handledOnMount.current = true;
+      onChange({ target: { name, type: attributeType, value: generateUuidFieldValue(options) } });
     }
-  }, [value, handleChange, disableAutoGenerate, generateNewUuid]);
+  }, [state.clearOnMount, state.generateOnMount, onChange, name, attributeType, options]);
 
-  useEffect(() => {
-    if (value !== previousValueRef.current) {
-      previousValueRef.current = value;
+  const actions = createUuidInputActions({
+    allowEdit: state.canGenerate,
+    options,
+    generateValue: () => generateUuidFieldValue(options),
+    onChange,
+    name,
+    type: attribute?.type,
+    value,
+    clipboard: {
+      writeText: async (text) => {
+        if (!(await copy(text))) throw new Error('copy failed');
+      },
+    },
+  });
 
-      if (value) {
-        const rawUuid = uuidPrefix && value.startsWith(uuidPrefix)
-          ? value.slice(uuidPrefix.length)
-          : value;
-        setInvalidUUID(!validateUuid(rawUuid));
-      } else {
-        setInvalidUUID(false);
-      }
+  const handleCopy = async () => {
+    const copied = await actions.copy();
+    if (!copied) {
+      toggleNotification({
+        type: 'warning',
+        message: formatMessage({
+          id: getTranslation('form.field.copyFailed'),
+          defaultMessage: 'The UUID could not be copied. Select the value and copy it manually.',
+        }),
+      });
+      return;
     }
-  }, [value, uuidPrefix]);
+    toggleNotification({
+      type: 'success',
+      message: formatMessage({
+        id: getTranslation('form.field.copied'),
+        defaultMessage: 'UUID copied.',
+      }),
+    });
+    setIsCopied(true);
+    clearTimeout(copiedTimer.current);
+    copiedTimer.current = setTimeout(() => setIsCopied(false), 2000);
+  };
 
-  const handleRefresh = useCallback(() => {
-    setIsGenerating(true);
-    handleChange(generateNewUuid());
-    setInvalidUUID(false);
-    setTimeout(() => setIsGenerating(false), 150);
-  }, [handleChange, generateNewUuid]);
+  // The confirmation has no Dialog.Trigger, so focus is returned by hand.
+  const closeConfirm = () => {
+    setConfirmOpen(false);
+    setTimeout(() => generateButtonRef.current?.focus(), 0);
+  };
 
-  const handleCopy = useCallback(async () => {
-    if (!value) return;
-
-    try {
-      await navigator.clipboard.writeText(value);
-      setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000);
-    } catch {
-      /* clipboard API not available in this context */
+  const handleGenerate = () => {
+    if (state.confirmReplace && value === savedValue) {
+      setConfirmOpen(true);
+      return;
     }
-  }, [value]);
+    actions.regenerate();
+  };
 
-  const fieldError = error || (invalidUUID
-    ? formatMessage({
-        id: 'field-uuid.form.field.error',
-        defaultMessage: 'The UUID format is invalid.',
-      })
-    : null);
+  const invalid = Boolean(value) && (!options || !isUuidFieldValue(value, options));
+  const fieldError =
+    error ||
+    (!options
+      ? formatMessage({
+          id: getTranslation('form.field.configError'),
+          defaultMessage: 'The UUID field configuration is invalid. Check its version and prefix.',
+        })
+      : invalid && value !== savedValue
+        ? formatMessage({
+            id: getTranslation('form.field.error'),
+            defaultMessage: "The value does not match this field's UUID version and prefix.",
+          })
+        : undefined);
+
+  const placeholder =
+    state.placeholder === 'enterManually'
+      ? formatMessage({
+          id: getTranslation('form.placeholder.manual'),
+          defaultMessage: 'Enter a UUID',
+        })
+      : state.placeholder === 'generatedOnSave'
+        ? formatMessage({
+            id: getTranslation('form.placeholder'),
+            defaultMessage: 'Generated when the entry is saved',
+          })
+        : undefined;
+
+  const generateLabel = formatMessage({
+    id: getTranslation('form.field.generate'),
+    defaultMessage: 'Generate a new UUID',
+  });
 
   return (
-    <Field.Root
-      name={name}
-      id={name}
-      error={fieldError}
-      hint={hint}
-      required={required}
-    >
+    <Field.Root name={name} id={name} error={fieldError} hint={hint} required={required}>
       <Flex direction="column" alignItems="stretch" gap={1}>
         <Field.Label action={labelAction}>
-          {label || formatMessage({
-            id: 'field-uuid.form.label',
-            defaultMessage: 'UUID',
-          })}
+          {label || formatMessage({ id: getTranslation('form.label'), defaultMessage: 'UUID' })}
         </Field.Label>
 
-        <Flex gap={2}>
-          <div style={{ flex: 1 }}>
+        <Flex gap={2} alignItems="flex-start">
+          <Box flex="1" minWidth={0}>
             <TextInput
-              ref={forwardedRef}
+              ref={ref}
               name={name}
-              value={value}
+              value={value ?? ''}
               disabled={disabled}
-              readOnly={!allowEdit}
-              onChange={allowEdit ? (e) => handleChange(e.target.value) : undefined}
-              placeholder={formatMessage({
-                id: 'field-uuid.form.placeholder',
-                defaultMessage: 'UUID will be auto-generated',
-              })}
-              aria-label={formatMessage({
-                id: 'field-uuid.form.label',
-                defaultMessage: 'UUID',
-              })}
-              style={{
-                fontFamily: "'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace",
-                letterSpacing: '0.5px',
-              }}
+              readOnly={!state.editable}
+              onChange={state.editable ? (event) => actions.change(event.target.value) : undefined}
+              placeholder={placeholder}
+              style={MONO_STYLE}
             />
-          </div>
+          </Box>
 
           <IconButton
             onClick={handleCopy}
-            disabled={disabled || !value}
-            aria-label={formatMessage({
-              id: 'field-uuid.form.field.copy',
-              defaultMessage: 'Copy UUID to clipboard',
-            })}
-            variant={isCopied ? 'success' : 'secondary'}
-            withTooltip={false}
-            style={isCopied ? {
-              background: '#16A34A',
-              color: 'white',
-              transition: 'all 0.2s ease',
-            } : {}}
-          >
-            {isCopied ? <Check /> : <Duplicate />}
-          </IconButton>
-
-          <IconButton
-            onClick={handleRefresh}
-            disabled={disabled || isGenerating}
-            aria-label={formatMessage({
-              id: 'field-uuid.form.field.generate',
-              defaultMessage: 'Generate new UUID',
+            disabled={!value}
+            label={formatMessage({
+              id: getTranslation('form.field.copy'),
+              defaultMessage: 'Copy UUID',
             })}
             variant="secondary"
-            withTooltip={false}
+            size="M"
           >
-            <ArrowClockwise />
+            {isCopied ? <Check aria-hidden /> : <Duplicate aria-hidden />}
           </IconButton>
+
+          {state.canGenerate && (
+            <IconButton
+              ref={generateButtonRef}
+              onClick={handleGenerate}
+              disabled={!options}
+              label={generateLabel}
+              variant="secondary"
+              size="M"
+            >
+              <ArrowClockwise aria-hidden />
+            </IconButton>
+          )}
         </Flex>
 
         <Field.Hint />
         <Field.Error />
       </Flex>
+
+      <Dialog.Root
+        open={confirmOpen}
+        onOpenChange={(open) => (open ? setConfirmOpen(true) : closeConfirm())}
+      >
+        <ConfirmDialog
+          title={formatMessage({
+            id: getTranslation('form.confirm.title'),
+            defaultMessage: 'Replace this UUID?',
+          })}
+          variant="danger-light"
+          endAction={
+            <Button
+              fullWidth
+              variant="danger-light"
+              onClick={() => {
+                actions.regenerate();
+                closeConfirm();
+              }}
+            >
+              {formatMessage({
+                id: getTranslation('form.confirm.action'),
+                defaultMessage: 'Replace UUID',
+              })}
+            </Button>
+          }
+        >
+          {formatMessage({
+            id: getTranslation('form.confirm.body'),
+            defaultMessage:
+              'Links and integrations that use the current value stop working after the entry is saved.',
+          })}
+        </ConfirmDialog>
+      </Dialog.Root>
     </Field.Root>
   );
 });
-
-Input.displayName = 'UUIDInput';
 
 export default Input;

@@ -1,95 +1,93 @@
+import { z } from 'zod';
+
 /**
- * Plugin Configuration Schema
- * 
- * Configure the UUID plugin behavior via config/plugins.js:
- * 
+ * Plugin configuration for strapi-auto-uuid.
+ *
+ * Configure the plugin in `config/plugins.js` of the Strapi project:
+ *
  * @example
- * // config/plugins.js
  * module.exports = {
  *   'field-uuid': {
  *     enabled: true,
  *     config: {
- *       // Default UUID version for new fields (v4 or v7)
- *       defaultVersion: 'v4',
- *       
- *       // Auto-generate UUIDs on create (default: true)
- *       autoGenerate: true,
- *       
- *       // Validate uniqueness before save (default: true)
- *       validateUniqueness: true,
- *       
- *       // Allow manual UUID editing in admin panel (default: false)
- *       allowManualEdit: false,
- *       
- *       // Run auto-migration on bootstrap (default: false)
- *       autoMigrate: false,
- *       
- *       // Log level: 'debug', 'info', 'warn', 'error' (default: 'info')
- *       logLevel: 'info',
+ *       defaultVersion: 'v4', // 'v4' (random) or 'v7' (time-sortable)
+ *       autoGenerate: true, // generate a value on create when the field is empty
+ *       validateUniqueness: true, // reject or replace values used by another document
+ *       autoMigrate: false, // repair empty, malformed and duplicate values on boot
+ *       maxRetryAttempts: 3, // collision retries per generated value (1-10)
+ *       logLevel: 'info', // 'debug' | 'info' | 'warn' | 'error'
  *     },
  *   },
  * };
  */
+
+export const PLUGIN_CONFIG_DEFAULTS = Object.freeze({
+  defaultVersion: 'v4',
+  autoGenerate: true,
+  validateUniqueness: true,
+  autoMigrate: false,
+  maxRetryAttempts: 3,
+  logLevel: 'info',
+});
+
+/**
+ * Strict schema for the plugin configuration. Unknown keys are rejected so a
+ * typo such as `autoGenrate` fails at boot instead of being ignored.
+ * `allowManualEdit` was documented in 1.x but never read; it is still
+ * accepted so existing configurations keep booting, and it has no effect.
+ * Editing is controlled by the per-field "Allow manual editing" option.
+ */
+export const pluginConfigSchema = z.strictObject({
+  defaultVersion: z.enum(['v4', 'v7']).optional(),
+  autoGenerate: z.boolean().optional(),
+  validateUniqueness: z.boolean().optional(),
+  autoMigrate: z.boolean().optional(),
+  maxRetryAttempts: z.number().int().min(1).max(10).optional(),
+  logLevel: z.enum(['debug', 'info', 'warn', 'error']).optional(),
+  allowManualEdit: z.boolean().optional(),
+});
+
+/**
+ * Validates raw plugin configuration and fills in defaults.
+ *
+ * @param {unknown} raw Value of `strapi.config.get('plugin::field-uuid')`.
+ * @returns {{ defaultVersion: 'v4'|'v7', autoGenerate: boolean, validateUniqueness: boolean,
+ *   autoMigrate: boolean, maxRetryAttempts: number, logLevel: 'debug'|'info'|'warn'|'error' }}
+ * @throws {Error} When a key is unknown or a value has the wrong type or range.
+ */
+export function normalizePluginConfig(raw = {}) {
+  const result = pluginConfigSchema.safeParse(raw ?? {});
+  if (!result.success) {
+    const issue = result.error.issues[0];
+    const path = issue.path.join('.') || issue.keys?.join(', ') || '(root)';
+    throw new Error(
+      `[strapi-auto-uuid] Invalid plugin configuration at '${path}': ${issue.message}`
+    );
+  }
+  const { allowManualEdit: _ignored, ...config } = result.data;
+  return { ...PLUGIN_CONFIG_DEFAULTS, ...config };
+}
+
+/**
+ * Reads and normalizes the plugin configuration from a Strapi instance.
+ *
+ * @param {{ config: { get: Function } }} strapi Strapi instance.
+ * @returns {ReturnType<typeof normalizePluginConfig>} Normalized configuration.
+ */
+export function getPluginConfig(strapi) {
+  return normalizePluginConfig(strapi.config.get('plugin::field-uuid', {}));
+}
+
 export default {
-  default: {
-    // Default UUID version - v4 is random, v7 is time-sortable
-    defaultVersion: 'v4',
-    
-    // Auto-generate UUID when creating new entries
-    autoGenerate: true,
-    
-    // Validate UUID uniqueness before saving
-    validateUniqueness: true,
-    
-    // Allow users to manually edit UUIDs in admin panel
-    allowManualEdit: false,
-    
-    // Automatically fix issues on server start (dangerous, use with caution)
-    autoMigrate: false,
-    
-    // Maximum retry attempts for UUID collision
-    maxRetryAttempts: 3,
-    
-    // Logging level
-    logLevel: 'info',
-  },
-  
+  default: { ...PLUGIN_CONFIG_DEFAULTS },
+
   /**
-   * Validate plugin configuration
-   * @param {Object} config - User-provided configuration
+   * Called by Strapi with the merged plugin configuration.
+   *
+   * @param {unknown} config Merged configuration.
+   * @throws {Error} When the configuration is invalid.
    */
   validator(config) {
-    // Validate defaultVersion
-    if (config.defaultVersion && !['v4', 'v7'].includes(config.defaultVersion)) {
-      throw new Error(
-        `[strapi-auto-uuid] Invalid defaultVersion: "${config.defaultVersion}". Must be "v4" or "v7".`
-      );
-    }
-    
-    // Validate maxRetryAttempts
-    if (config.maxRetryAttempts !== undefined) {
-      if (typeof config.maxRetryAttempts !== 'number' || config.maxRetryAttempts < 1) {
-        throw new Error(
-          `[strapi-auto-uuid] Invalid maxRetryAttempts: "${config.maxRetryAttempts}". Must be a positive number.`
-        );
-      }
-    }
-    
-    // Validate logLevel
-    if (config.logLevel && !['debug', 'info', 'warn', 'error'].includes(config.logLevel)) {
-      throw new Error(
-        `[strapi-auto-uuid] Invalid logLevel: "${config.logLevel}". Must be "debug", "info", "warn", or "error".`
-      );
-    }
-    
-    // Validate boolean options
-    const booleanOptions = ['autoGenerate', 'validateUniqueness', 'allowManualEdit', 'autoMigrate'];
-    for (const option of booleanOptions) {
-      if (config[option] !== undefined && typeof config[option] !== 'boolean') {
-        throw new Error(
-          `[strapi-auto-uuid] Invalid ${option}: "${config[option]}". Must be a boolean.`
-        );
-      }
-    }
+    normalizePluginConfig(config);
   },
 };

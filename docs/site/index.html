@@ -5,10 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Documentation for the Strapi Auto UUID custom-field plugin."
+      content="Auto UUID for Strapi 5: a UUID v4/v7 custom field generated on the server, unique across documents and locales, with check, repair, export and import tools."
     />
-    <title>Auto UUID | Strapi plugin</title>
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#171b31" />
+    <link rel="canonical" href="https://schero94.github.io/strapi-auto-uuid/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Auto UUID for Strapi 5" />
+    <meta
+      property="og:description"
+      content="UUID v4/v7 custom field for Strapi 5: generated on save, unique across documents, locked by default, with repair and export tools."
+    />
+    <meta property="og:url" content="https://schero94.github.io/strapi-auto-uuid/" />
+    <meta
+      property="og:image"
+      content="https://schero94.github.io/strapi-auto-uuid/img/settings-light.webp"
+    />
+    <meta property="og:image:width" content="1440" />
+    <meta property="og:image:height" content="900" />
+    <meta
+      property="og:image:alt"
+      content="UUID management page of the Auto UUID plugin in the Strapi admin"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <title>Auto UUID for Strapi 5 | UUID v4 and v7 custom field</title>
     <link rel="stylesheet" href="./site.css" />
+    <link rel="stylesheet" href="./site-extra.css" />
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to content</a>
@@ -29,18 +51,20 @@
       <section class="hero" aria-labelledby="page-title">
         <div class="hero-copy">
           <span class="eyebrow">Strapi 5 custom field</span>
-          <h1 id="page-title">UUIDs for your content types</h1>
+          <h1 id="page-title">UUIDs that stay put</h1>
           <p>
-            Auto UUID registers a string custom field and can generate UUID v4 and UUID v7 values.
-            Admin tools help inspect and manage UUID data.
+            Add a UUID field in the Content-Type Builder and every entry gets a v4 or v7 value on
+            save, from the admin, REST, GraphQL or the Document Service. Duplicates are rejected and
+            values stay locked unless you allow editing.
           </p>
           <div class="hero-actions">
             <a class="button primary" href="#install">Install the plugin</a>
             <a class="button" href="https://github.com/Schero94/strapi-auto-uuid">View source</a>
           </div>
           <div class="badges" aria-label="Compatibility and package details">
-            <span class="badge">Strapi 5</span>
+            <span class="badge">Strapi 5.24+</span>
             <span class="badge">UUID v4 and v7</span>
+            <span class="badge">5 admin languages</span>
             <span class="badge">MIT</span>
           </div>
         </div>
@@ -50,10 +74,15 @@
     <main class="layout" id="main-content">
       <nav class="side-nav" aria-label="Documentation sections">
         <a href="#features">Features</a>
+        <a href="#gallery">Gallery</a>
         <a href="#install">Install</a>
+        <a href="#rules">Rules</a>
         <a href="#configuration">Configuration</a>
         <a href="#security">Security</a>
         <a href="#api">API</a>
+        <a href="#performance">Performance</a>
+        <a href="#upgrade">Upgrading</a>
+        <a href="#faq">FAQ</a>
         <a href="#releases">Releases</a>
       </nav>
 
@@ -65,41 +94,141 @@
           </p>
           <div class="card-grid">
             <article class="card">
-              <h3>UUID v4 and v7</h3>
+              <h3>Generated on the server</h3>
               <p>
-                Generate random v4 values or time-sortable v7 values. A field can also set a prefix.
+                Random v4 or time-sortable v7, with an optional prefix such as <code>usr_</code>.
+                Every write path gets a value, not only the admin.
               </p>
             </article>
             <article class="card">
-              <h3>Custom field options</h3>
+              <h3>Unique and locked</h3>
               <p>
-                Choose the UUID version, disable automatic generation, allow editing, or mark a
-                field private.
+                Checked on every save across documents, locales, drafts and published rows, case
+                insensitive. Values cannot change unless the field allows editing.
               </p>
             </article>
             <article class="card">
-              <h3>UUID management</h3>
+              <h3>Check and repair</h3>
               <p>
-                Review UUID status, diagnose duplicates and invalid or empty values, and generate or
-                repair values.
+                See duplicates, empty and malformed values per field. Repairs show a preview, ask
+                for confirmation and run in one transaction.
               </p>
             </article>
             <article class="card">
-              <h3>Migration tools</h3>
+              <h3>Export and import</h3>
               <p>
-                Check migration status and run selected fixes. Export and import UUID mappings as
-                JSON.
+                Back up every UUID as JSON and restore it into empty fields. Large exports are split
+                into files that fit one import each.
               </p>
             </article>
+          </div>
+        </section>
+
+        <section class="section" id="gallery" aria-labelledby="gallery-title">
+          <h2 id="gallery-title">Gallery</h2>
+          <p class="section-lead">
+            The admin screens follow the Strapi design system, in light and dark mode and on small
+            screens. All screenshots use synthetic data.
+          </p>
+          <div class="gallery">
+            <figure>
+              <a href="./img/settings-light.webp"
+                ><img
+                  src="./img/settings-light.webp"
+                  width="1440"
+                  height="900"
+                  loading="lazy"
+                  alt="UUID management page with counts for content types, UUID fields, entries, duplicates, empty and malformed values"
+              /></a>
+              <figcaption>UUID management: status and repair actions</figcaption>
+            </figure>
+            <figure>
+              <a href="./img/repair-dialog-light.webp"
+                ><img
+                  src="./img/repair-dialog-light.webp"
+                  width="1440"
+                  height="900"
+                  loading="lazy"
+                  alt="Repair all dialog with repair options and a preview that lists the changes before they are applied"
+              /></a>
+              <figcaption>Repairs are previewed before anything is written</figcaption>
+            </figure>
+            <figure>
+              <a href="./img/field-editable-light.webp"
+                ><img
+                  src="./img/field-editable-light.webp"
+                  width="1440"
+                  height="900"
+                  loading="lazy"
+                  alt="Content Manager entry with an editable UUID field, a copy button and a generate button"
+              /></a>
+              <figcaption>Editable field with copy and generate</figcaption>
+            </figure>
+            <figure>
+              <a href="./img/field-locked-dark.webp"
+                ><img
+                  src="./img/field-locked-dark.webp"
+                  width="1440"
+                  height="900"
+                  loading="lazy"
+                  alt="Content Manager entry in dark mode with locked UUID fields that only offer a copy button"
+              /></a>
+              <figcaption>Locked fields in dark mode</figcaption>
+            </figure>
+            <figure>
+              <a href="./img/content-type-builder-light.webp"
+                ><img
+                  src="./img/content-type-builder-light.webp"
+                  width="1440"
+                  height="900"
+                  loading="lazy"
+                  alt="Content-Type Builder dialog with the UUID version select and the prefix field"
+              /></a>
+              <figcaption>Field options in the Content-Type Builder</figcaption>
+            </figure>
+            <figure>
+              <a href="./img/settings-dark.webp"
+                ><img
+                  src="./img/settings-dark.webp"
+                  width="1440"
+                  height="900"
+                  loading="lazy"
+                  alt="UUID management page in dark mode"
+              /></a>
+              <figcaption>UUID management in dark mode</figcaption>
+            </figure>
+          </div>
+          <div class="gallery gallery-mobile">
+            <figure>
+              <a href="./img/settings-mobile-light.webp"
+                ><img
+                  src="./img/settings-mobile-light.webp"
+                  width="390"
+                  height="844"
+                  loading="lazy"
+                  alt="UUID management page on a 390 pixel wide screen"
+              /></a>
+              <figcaption>Mobile, light</figcaption>
+            </figure>
+            <figure>
+              <a href="./img/settings-mobile-dark.webp"
+                ><img
+                  src="./img/settings-mobile-dark.webp"
+                  width="390"
+                  height="844"
+                  loading="lazy"
+                  alt="UUID management page on a 390 pixel wide screen in dark mode"
+              /></a>
+              <figcaption>Mobile, dark</figcaption>
+            </figure>
           </div>
         </section>
 
         <section class="section" id="install">
           <h2>Install</h2>
           <p class="section-lead">
-            The package supports Strapi 5 through its <code>@strapi/strapi</code> peer dependency.
-            The package does not declare a Node.js engine range; its release workflow builds on
-            Node.js 22.
+            Requires Strapi 5.24 or newer (tested with 5.61) and Node.js 22.12 or newer. The package
+            declares both as peer dependency and engine range.
           </p>
           <div class="code-card">
             <div class="code-label"><span>Terminal</span><span>npm</span></div>
@@ -116,6 +245,59 @@
 };</code></pre>
           </div>
           <p>Then add the UUID custom field to a content type in Strapi's Content-Type Builder.</p>
+        </section>
+
+        <section class="section" id="rules">
+          <h2>How values are protected</h2>
+          <p class="section-lead">
+            The plugin's lifecycle hooks apply these rules to every write, whatever the source.
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Situation</th>
+                  <th scope="col">Result</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Create with an empty field</td>
+                  <td>A value is generated, unless auto-generation is off for the field.</td>
+                </tr>
+                <tr>
+                  <td>Create with a value, field not editable</td>
+                  <td>The value is replaced with a generated one.</td>
+                </tr>
+                <tr>
+                  <td>Create with a value, field editable</td>
+                  <td>Kept if it matches the version and prefix and no other document uses it.</td>
+                </tr>
+                <tr>
+                  <td>Publish, discard draft, new locale</td>
+                  <td>The document keeps its value.</td>
+                </tr>
+                <tr>
+                  <td>Clone</td>
+                  <td>
+                    The copy gets a new value. The admin clone page clears the copied value first.
+                  </td>
+                </tr>
+                <tr>
+                  <td>Same UUID in other letter case</td>
+                  <td>A duplicate (400). New values are stored in lowercase.</td>
+                </tr>
+                <tr>
+                  <td>Update with a different value</td>
+                  <td>Only for editable fields, or once while the field is empty.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            A localized UUID field has its own value per locale; a non-localized one is shared by
+            all locales of a document. UUID fields inside components are filled by the admin only.
+          </p>
         </section>
 
         <section class="section" id="configuration">
@@ -146,7 +328,10 @@
                 </tr>
                 <tr>
                   <td><code>validateUniqueness</code></td>
-                  <td>Check UUID uniqueness during lifecycle operations.</td>
+                  <td>
+                    Reject values used by another document, on every save, across all locales and
+                    draft and published rows.
+                  </td>
                   <td><code>true</code></td>
                 </tr>
                 <tr>
@@ -156,7 +341,10 @@
                 </tr>
                 <tr>
                   <td><code>autoMigrate</code></td>
-                  <td>Run migration fixes during startup.</td>
+                  <td>
+                    Repair empty, malformed and duplicate values on startup. Refused in production
+                    unless explicitly allowed; never replaces values in an older version or prefix.
+                  </td>
                   <td><code>false</code></td>
                 </tr>
                 <tr>
@@ -198,7 +386,7 @@
               <tbody>
                 <tr>
                   <td><code>plugin::field-uuid.read</code></td>
-                  <td>Models, statistics, diagnosis, migration status, and duplicate checks.</td>
+                  <td>Models, statistics, diagnosis and migration status.</td>
                 </tr>
                 <tr>
                   <td><code>plugin::field-uuid.migrate</code></td>
@@ -206,7 +394,10 @@
                 </tr>
                 <tr>
                   <td><code>plugin::field-uuid.export</code></td>
-                  <td>Export UUID mappings.</td>
+                  <td>
+                    Export every documentId and UUID of every content type, regardless of Content
+                    Manager permissions.
+                  </td>
                 </tr>
                 <tr>
                   <td><code>plugin::field-uuid.import</code></td>
@@ -245,11 +436,6 @@
                   <td>Check plugin status.</td>
                 </tr>
                 <tr>
-                  <td><code>POST /check-duplicate</code></td>
-                  <td><code>read</code></td>
-                  <td>Validate a UUID against a content type and field.</td>
-                </tr>
-                <tr>
                   <td><code>GET /diagnose</code></td>
                   <td><code>read</code></td>
                   <td>Return UUID diagnosis results.</td>
@@ -274,7 +460,8 @@
                   <td><code>migrate</code></td>
                   <td>
                     Run selected fixes with <code>dryRun</code>, <code>fixEmpty</code>,
-                    <code>fixInvalid</code>, and <code>fixDuplicates</code>.
+                    <code>fixInvalid</code>, <code>fixDuplicates</code> and <code>fixLegacy</code>.
+                    Returns 409 while another repair runs.
                   </td>
                 </tr>
                 <tr>
@@ -286,7 +473,9 @@
                   <td><code>POST /migration/import</code></td>
                   <td><code>import</code></td>
                   <td>
-                    Import mappings with <code>dryRun</code> and <code>overwrite</code> options.
+                    Fill empty fields from an export with <code>dryRun</code>. Existing values are
+                    never replaced. At most 10,000 entries, and the body must fit Strapi's JSON
+                    limit (1 MB by default).
                   </td>
                 </tr>
               </tbody>
@@ -294,18 +483,122 @@
           </div>
         </section>
 
+        <section class="section" id="performance">
+          <h2>Performance</h2>
+          <p class="section-lead">
+            Checks and exports read rows in pages of 5,000 and select only the columns they need.
+            Imports look up 500 entries per query batch. On SQLite with about 5,000 synthetic
+            entries, the overview scan took 40 ms and a 5,000-value import 315 ms.
+          </p>
+          <p>
+            Each save looks up the UUID column a few times. For large tables, add an index with a
+            <a href="https://docs.strapi.io/cms/database-migrations">Strapi database migration</a>:
+          </p>
+          <div class="code-card">
+            <div class="code-label">
+              <span>database/migrations/2026.11.07T00.00.00.uuid-indexes.js</span>
+            </div>
+            <pre><code>'use strict';
+
+const INDEXES = [['tickets', 'ticket_id']];
+
+async function up(knex) {
+  for (const [table, column] of INDEXES) {
+    if (!(await knex.schema.hasTable(table)) || !(await knex.schema.hasColumn(table, column))) {
+      continue;
+    }
+    await knex.schema.alterTable(table, (t) =&gt; t.index([column], `${table}_${column}_uuid_idx`));
+  }
+}
+
+module.exports = { up };</code></pre>
+          </div>
+        </section>
+
+        <section class="section" id="upgrade">
+          <h2>Upgrading from 1.x</h2>
+          <p class="section-lead">
+            The next release is 2.0.0 because some write rules are stricter. Run the check and
+            export a backup after you update.
+          </p>
+          <div class="card-grid">
+            <article class="card">
+              <h3>Client UUIDs</h3>
+              <p>
+                Fields with manual editing off replace values sent on create. Turn on
+                <strong>Allow manual editing</strong> for fields that API clients fill.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Duplicates</h3>
+              <p>
+                A create with a UUID another document uses, in any letter case, returns 400
+                <code>DUPLICATE_UUID</code>.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Admin API</h3>
+              <p>
+                <code>POST /check-duplicate</code> was removed. Imports take at most 10,000 entries
+                and never accept <code>overwrite: true</code>.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Runtime</h3>
+              <p>
+                Node.js 22.12 or newer and Strapi 5.24 or newer. Unknown config keys fail at boot.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" id="faq">
+          <h2>FAQ</h2>
+          <div class="card-grid">
+            <article class="card">
+              <h3>Is there a database unique constraint?</h3>
+              <p>
+                No. Strapi 5 does not create one for <code>unique</code>. The plugin checks every
+                save; two concurrent creates with the same client-supplied value can still race.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Why does Duplicate in the list view fail?</h3>
+              <p>
+                Strapi refuses its quick clone for unique attributes. Use the clone page of the
+                entry, or turn off <strong>Unique values</strong> for the field.
+              </p>
+            </article>
+            <article class="card">
+              <h3>The import says the file is too large</h3>
+              <p>Export again: the export is split into files that each fit one import.</p>
+            </article>
+            <article class="card">
+              <h3>What about fields inside components?</h3>
+              <p>
+                The admin fills an empty one when the component is shown. The server does not
+                generate, validate or repair them.
+              </p>
+            </article>
+          </div>
+        </section>
+
         <section class="section" id="releases">
           <h2>Releases and testing</h2>
           <p class="section-lead">
             The repository uses Conventional Commits and semantic-release on pushes to
-            <code>main</code>. The workflow runs <code>npm ci --legacy-peer-deps</code>, tests, build, and package
-            verification before release. NPM publishing remains enabled and uses the repository's
-            <code>NPM_TOKEN</code> secret.
+            <code>main</code>. The workflow runs lint, format check, tests (including lifecycle and
+            repair tests on a real SQLite database), build and package verification, then publishes
+            to npm with provenance. It uses npm trusted publishing when it is configured and the
+            <code>NPM_TOKEN</code> secret otherwise. Pull requests run the same checks on Node.js 22
+            and 24.
           </p>
           <p>For local checks, run:</p>
           <div class="code-card">
             <div class="code-label"><span>Terminal</span><span>Node.js</span></div>
             <pre><code>npm ci --legacy-peer-deps
+npm run lint
+npm run format:check
 npm test
 npm run build
 npm run verify</code></pre>
@@ -322,7 +615,11 @@ npm run verify</code></pre>
 
     <footer class="footer">
       <p>Strapi Auto UUID is released under the MIT License.</p>
-      <p><a href="https://github.com/Schero94/strapi-auto-uuid">Source and issue tracker</a></p>
+      <p>
+        <a href="https://github.com/Schero94/strapi-auto-uuid">Source</a> ·
+        <a href="https://github.com/Schero94/strapi-auto-uuid/issues">Issues</a> ·
+        <a href="https://github.com/Schero94/strapi-auto-uuid/blob/main/CHANGELOG.md">Changelog</a>
+      </p>
     </footer>
   </body>
 </html>

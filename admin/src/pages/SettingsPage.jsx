@@ -1,1138 +1,884 @@
 /**
- * UUID Plugin - Settings Page
+ * Settings > Auto UUID > UUID management.
+ *
+ * Shows the state of every UUID field (counts per content type), runs the
+ * check, the repairs (with preview and confirmation) and the export/import
+ * of UUID mappings. Each action is shown only to roles with the matching
+ * permission; the server enforces the same permissions on every route.
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import { forwardRef, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
-import { useFetchClient, useNotification } from '@strapi/strapi/admin';
-import styled, { keyframes, css } from 'styled-components';
+import { Alert, Badge, Box, Button, Checkbox, Flex, Grid, Typography } from '@strapi/design-system';
 import {
-  Box,
-  Button,
-  Flex,
-  Typography,
-  Badge,
-  Loader,
-  Accordion,
-  Alert,
-  Checkbox,
-  Modal,
-} from '@strapi/design-system';
-import {
-  Check,
-  WarningCircle,
   ArrowClockwise,
-  Search,
-  Cog,
-  Plus,
-  Stack,
+  Check,
   Download,
+  Plus,
+  Search,
+  Sparkle,
   Upload,
-  Play,
+  WarningCircle,
 } from '@strapi/icons';
+import { Layouts, Page, useFetchClient, useNotification, useRBAC } from '@strapi/strapi/admin';
 import { PLUGIN_ID } from '../pluginId';
+import { getTranslation } from '../utils/getTranslation';
+import { splitExport } from '../utils/exportParts';
+import { ALL_PERMISSIONS } from '../utils/permissions';
+import { countChanges, describeError } from '../utils/report';
+import { ImportDialog } from './settings/ImportDialog';
+import { RepairDialog } from './settings/RepairDialog';
+import {
+  ActionCardButton,
+  ActionIcon,
+  Card,
+  Fieldset,
+  HeroBadge,
+  HeroBanner,
+  HeroText,
+  ModelList,
+  ModelRow,
+  Mono,
+} from './settings/styles';
 
-// Animations
-const fadeIn = keyframes`
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-`;
-
-const shimmer = keyframes`
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-`;
-
-// Styled Components
-const Container = styled(Box)`
-  ${css`animation: ${fadeIn} 0.5s;`}
-  max-width: 1200px;
-  margin: 0 auto;
-`;
-
-const StickySaveBar = styled(Box)`
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  background: ${props => props.theme.colors.neutral0};
-  border-bottom: 1px solid ${props => props.theme.colors.neutral200};
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-`;
-
-const HeaderBanner = styled(Box)`
-  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
-  border-radius: 16px;
-  padding: 32px;
-  color: white;
-  position: relative;
-  overflow: hidden;
-  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.25);
-  margin-bottom: 32px;
-  
-  &::after {
-    content: '';
-    position: absolute;
-    top: -50%;
-    right: -50%;
-    width: 200%;
-    height: 200%;
-    background: linear-gradient(
-      45deg,
-      transparent,
-      rgba(255, 255, 255, 0.08),
-      transparent
-    );
-    ${css`animation: ${shimmer} 3s infinite;`}
-    pointer-events: none;
-    z-index: 0;
-  }
-  
-  & > * {
-    position: relative;
-    z-index: 1;
-  }
-`;
-
-const StatCard = styled(Box)`
-  background: ${props => props.theme.colors.neutral0};
-  border: 1px solid ${props => props.theme.colors.neutral200};
-  border-radius: 16px;
-  padding: 28px;
-  flex: 1;
-  min-width: 200px;
-  transition: all 0.2s ease;
-  text-align: center;
-  
-  &:hover {
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
-    transform: translateY(-4px);
-  }
-`;
-
-const StatValue = styled.div`
-  font-size: 3rem;
-  font-weight: 800;
-  color: ${props => props.$color || props.theme.colors.neutral800};
-  line-height: 1;
-  margin-bottom: 8px;
-`;
-
-const StatLabel = styled.div`
-  font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  color: ${props => props.theme.colors.neutral600};
-  font-weight: 600;
-`;
-
-const SectionTitle = styled.h2`
-  font-size: 20px;
-  font-weight: 700;
-  color: ${props => props.theme.colors.neutral800};
-  margin-bottom: 20px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-`;
-
-const ActionCard = styled.button`
-  background: ${props => props.theme.colors.neutral0};
-  border: 2px solid ${props => props.theme.colors.neutral200};
-  border-radius: 16px;
-  padding: 28px;
-  transition: all 0.25s ease;
-  cursor: pointer;
-  height: 100%;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-
-  &:focus-visible {
-    outline: 3px solid ${props => props.theme.colors.primary600};
-    outline-offset: 3px;
-  }
-  
-  &:hover {
-    border-color: ${props => props.$color || '#10B981'};
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
-    transform: translateY(-6px);
-  }
-`;
-
-const ActionIcon = styled.span`
-  width: 56px;
-  height: 56px;
-  border-radius: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: ${props => props.$bg || '#DCFCE7'};
-  margin-bottom: 20px;
-  
-  svg {
-    width: 28px;
-    height: 28px;
-    color: ${props => props.$color || '#16A34A'};
-  }
-`;
-
-const ActionTitle = styled.span`
-  font-size: 18px;
-  font-weight: 700;
-  color: ${props => props.theme.colors.neutral800};
-  margin: 0 0 12px 0;
-  line-height: 1.3;
-`;
-
-const ActionDescription = styled.span`
-  font-size: 14px;
-  color: ${props => props.theme.colors.neutral600};
-  margin: 0;
-  line-height: 1.6;
-  flex: 1;
-`;
-
-const ActionGrid = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
-  gap: 24px;
-  margin-bottom: 32px;
-`;
-
-const ModelRow = styled(Flex)`
-  padding: 20px 24px;
-  background: ${props => props.theme.colors.neutral0};
-  border: 1px solid ${props => props.theme.colors.neutral200};
-  border-radius: 12px;
-  margin-bottom: 12px;
-  transition: all 0.2s ease;
-  
-  &:hover {
-    background: ${props => props.theme.colors.neutral100};
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  }
-`;
-
-const ModelName = styled.div`
-  font-size: 15px;
-  font-weight: 600;
-  color: ${props => props.theme.colors.neutral800};
-  margin-bottom: 8px;
-  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
-`;
-
-const StatusBadge = styled(Badge)`
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  font-weight: 600;
-  font-size: 13px;
-  border-radius: 8px;
-`;
-
-const LoaderContainer = styled(Flex)`
-  min-height: 400px;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 16px;
-`;
-
-const FieldBadge = styled(Badge)`
-  background: ${props => props.theme.colors.primary100};
-  color: ${props => props.theme.colors.primary700};
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  border-radius: 6px;
-`;
-
-const LargeModalContent = styled(Modal.Content)`
-  max-width: 800px !important;
-  width: 90vw !important;
-`;
-
-const ImportTextarea = styled.textarea`
-  width: 100%;
-  min-height: 300px;
-  padding: 16px;
-  border-radius: 8px;
-  border: 1px solid ${props => props.theme.colors.neutral200};
-  background: ${props => props.theme.colors.neutral100};
-  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
-  font-size: 13px;
-  line-height: 1.6;
-  resize: vertical;
-  color: ${props => props.theme.colors.neutral800};
-  
-  &::placeholder {
-    color: ${props => props.theme.colors.neutral500};
-    font-size: 12px;
-  }
-  
-  &:focus {
-    outline: none;
-    border-color: ${props => props.theme.colors.primary600};
-    box-shadow: 0 0 0 2px ${props => props.theme.colors.primary100};
-  }
-`;
+const BADGE_TONES = {
+  success: { backgroundColor: 'success100', textColor: 'success700' },
+  warning: { backgroundColor: 'warning100', textColor: 'neutral800' },
+  danger: { backgroundColor: 'danger100', textColor: 'danger700' },
+  neutral: { backgroundColor: 'neutral150', textColor: 'neutral700' },
+};
 
 /**
- * Settings Page Component
+ * @param {number|null|undefined} count Issue count.
+ * @param {'warning'|'danger'} badTone Tone when the count is above zero.
+ * @returns {'success'|'warning'|'danger'|'neutral'} Badge tone.
  */
+const toneFor = (count, badTone) =>
+  count === null || count === undefined ? 'neutral' : count > 0 ? badTone : 'success';
+
+/**
+ * Card with one counter and a text status, so meaning never depends on colour.
+ *
+ * @param {Object} props Props.
+ * @returns {JSX.Element} Stat card.
+ */
+const StatCard = ({ label, value, tone, statusLabel, hint }) => {
+  const { formatMessage } = useIntl();
+  const known = value !== null && value !== undefined;
+  return (
+    <Card>
+      <Flex direction="column" alignItems="flex-start" gap={2}>
+        <Typography variant="sigma" tag="h3" textColor="neutral600">
+          {label}
+        </Typography>
+        <Typography variant="alpha" tag="p" textColor="neutral800">
+          {known ? (
+            value
+          ) : (
+            <span
+              aria-label={formatMessage({
+                id: getTranslation('common.notAvailable'),
+                defaultMessage: 'Not available',
+              })}
+            >
+              —
+            </span>
+          )}
+        </Typography>
+        {statusLabel && <Badge {...BADGE_TONES[tone]}>{statusLabel}</Badge>}
+        {hint && (
+          <Typography variant="pi" textColor="neutral600">
+            {hint}
+          </Typography>
+        )}
+      </Flex>
+    </Card>
+  );
+};
+
+/**
+ * Action card button. It forwards its ref because dialog triggers (Radix
+ * `asChild`) attach their ref and focus handling to it.
+ *
+ * @param {Object} props Props.
+ * @param {React.Ref<HTMLButtonElement>} ref Forwarded ref.
+ * @returns {JSX.Element} Card button.
+ */
+const ActionCard = forwardRef(function ActionCard(
+  { icon: Icon, tone, title, description, ...rest },
+  ref
+) {
+  return (
+    <ActionCardButton ref={ref} type="button" $tone={tone} {...rest}>
+      <ActionIcon $tone={tone} aria-hidden>
+        <Icon />
+      </ActionIcon>
+      <Typography variant="delta" tag="span" textColor="neutral800">
+        {title}
+      </Typography>
+      <Typography variant="omega" tag="span" textColor="neutral600">
+        {description}
+      </Typography>
+    </ActionCardButton>
+  );
+});
+
 const SettingsPage = () => {
   const { formatMessage } = useIntl();
-  const t = (id, defaultMessage, values) => formatMessage({ id: `${PLUGIN_ID}.${id}`, defaultMessage }, values);
-  const { get, post } = useFetchClient();
+  const { get } = useFetchClient();
   const { toggleNotification } = useNotification();
+  const headingId = useId();
+  const {
+    allowedActions: { canRead, canMigrate, canExport, canImport },
+    isLoading: isLoadingPermissions,
+  } = useRBAC(ALL_PERMISSIONS);
 
-  // State
-  const [isLoading, setIsLoading] = useState(false);
-  const [models, setModels] = useState({});
   const [stats, setStats] = useState(null);
-  const [diagnoseReport, setDiagnoseReport] = useState(null);
-  const [migrationStatus, setMigrationStatus] = useState(null);
-  const [error, setError] = useState(null);
-  
-  // Modal state
-  const [showFixModal, setShowFixModal] = useState(false);
-  const [showGenerateModal, setShowGenerateModal] = useState(false);
-  const [showMigrationModal, setShowMigrationModal] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
-  const [dryRun, setDryRun] = useState(true);
-  const [fixReport, setFixReport] = useState(null);
-  
-  // Migration options
-  const [migrationOptions, setMigrationOptions] = useState({
+  const [loadState, setLoadState] = useState('loading');
+  const [refreshing, setRefreshing] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [checked, setChecked] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [repairOptions, setRepairOptions] = useState({
     fixEmpty: true,
     fixInvalid: true,
     fixDuplicates: true,
+    fixLegacy: false,
   });
-  const [importData, setImportData] = useState('');
+  const [optionsVersion, setOptionsVersion] = useState(0);
+  const [dismissed, setDismissed] = useState({});
+
+  const refreshButtonRef = useRef(null);
+  const t = (descriptor, values) => formatMessage(descriptor, values);
 
   /**
-   * Fetches list of models using UUID fields
+   * Runs a page action and puts focus back on its trigger. The trigger is
+   * disabled while the action runs, so the browser moves focus to the body.
+   * When the trigger is gone (the retry button of a dismissed alert), focus
+   * goes to the Refresh button.
+   *
+   * @param {React.SyntheticEvent} event Click event of the trigger.
+   * @param {() => Promise<void>} action Page action.
+   * @returns {Promise<void>}
    */
-  const fetchModels = useCallback(async () => {
-    try {
-      const response = await get(`/${PLUGIN_ID}/models`);
-      setModels(response.data?.models || {});
-    } catch {
-      // silently handled
-    }
+  const runKeepingFocus = async (event, action) => {
+    const trigger = event?.currentTarget ?? null;
+    await action();
+    setTimeout(() => {
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      (trigger?.isConnected ? trigger : refreshButtonRef.current)?.focus();
+    }, 0);
+  };
+  const closeLabel = formatMessage({ id: getTranslation('common.close'), defaultMessage: 'Close' });
+  const dismiss = (key) => () => setDismissed((prev) => ({ ...prev, [key]: true }));
+
+  /** Loads the counts per field and the list of UUID fields. */
+  const loadStats = useCallback(async () => {
+    const { data } = await get(`/${PLUGIN_ID}/stats`);
+    setStats(data);
+    return data;
   }, [get]);
-
-  /**
-   * Fetches comprehensive statistics
-   */
-  const fetchStats = useCallback(async () => {
-    try {
-      const response = await get(`/${PLUGIN_ID}/stats`);
-      setStats(response.data);
-      setModels(response.data?.models || {});
-    } catch {
-      await fetchModels();
-    }
-  }, [get, fetchModels]);
-
-  /**
-   * Fetches migration status
-   */
-  const fetchMigrationStatus = useCallback(async () => {
-    try {
-      const response = await get(`/${PLUGIN_ID}/migration/status`);
-      setMigrationStatus(response.data);
-    } catch {
-      // silently handled
-    }
-  }, [get]);
-
-  /**
-   * Runs diagnosis to find duplicate UUIDs
-   */
-  const runDiagnose = async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response = await get(`/${PLUGIN_ID}/diagnose`);
-      setDiagnoseReport(response.data);
-      toggleNotification({
-        type: 'success',
-        message: t('settings.diagnose.success', 'Diagnosis completed successfully'),
-      });
-    } catch (err) {
-      setError(t('settings.error.diagnose', 'Failed to run diagnosis'));
-      toggleNotification({
-        type: 'danger',
-        message: t('settings.error.diagnose', 'Failed to run diagnosis'),
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  /**
-   * Runs auto-fix to replace duplicate UUIDs
-   */
-  const runAutoFix = async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response = await post(`/${PLUGIN_ID}/autofix`, { dryRun });
-      setFixReport(response.data);
-      
-      if (!dryRun && response.data.totalFixed > 0) {
-        toggleNotification({
-          type: 'success',
-          message: t('settings.autofix.success', '{count} duplicate(s) fixed', { count: response.data.totalFixed }),
-        });
-        await runDiagnose();
-      }
-    } catch (err) {
-      setError(t('settings.error.autofix', 'Failed to run auto-fix'));
-      toggleNotification({
-        type: 'danger',
-        message: t('settings.error.autofix', 'Failed to run auto-fix'),
-      });
-    } finally {
-      setIsLoading(false);
-      setShowFixModal(false);
-    }
-  };
-
-  /**
-   * Generates missing UUIDs for empty fields
-   */
-  const runGenerateMissing = async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response = await post(`/${PLUGIN_ID}/generate-missing`, { dryRun });
-      setFixReport(response.data);
-      
-      if (!dryRun && response.data.totalGenerated > 0) {
-        toggleNotification({
-          type: 'success',
-          message: t('settings.generate.success', '{count} UUID(s) generated', { count: response.data.totalGenerated }),
-        });
-      }
-    } catch (err) {
-      setError(t('settings.error.generate', 'Failed to generate missing UUIDs'));
-      toggleNotification({
-        type: 'danger',
-        message: t('settings.error.generate', 'Failed to generate missing UUIDs'),
-      });
-    } finally {
-      setIsLoading(false);
-      setShowGenerateModal(false);
-    }
-  };
-
-  /**
-   * Runs full migration to fix all UUID issues
-   */
-  const runMigration = async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response = await post(`/${PLUGIN_ID}/migration/run`, {
-        dryRun,
-        ...migrationOptions,
-      });
-      setFixReport(response.data);
-      
-      if (!dryRun && response.data.totalFixed > 0) {
-        toggleNotification({
-          type: 'success',
-          message: t('settings.migration.success', 'Migration completed: {count} entries fixed', { count: response.data.totalFixed }),
-        });
-        await fetchStats();
-        await fetchMigrationStatus();
-      }
-    } catch (err) {
-      setError(t('settings.error.migration', 'Failed to run migration'));
-      toggleNotification({
-        type: 'danger',
-        message: t('settings.error.migration', 'Failed to run migration'),
-      });
-    } finally {
-      setIsLoading(false);
-      setShowMigrationModal(false);
-    }
-  };
-
-  /**
-   * Exports UUID mappings as JSON file
-   */
-  const exportMappings = async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response = await get(`/${PLUGIN_ID}/migration/export`);
-      
-      // Create and download file
-      const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `uuid-mappings-${Date.now()}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      
-      toggleNotification({
-        type: 'success',
-        message: t('settings.export.success', 'UUID mappings exported successfully'),
-      });
-    } catch (err) {
-      setError(t('settings.error.export', 'Failed to export UUID mappings'));
-      toggleNotification({
-        type: 'danger',
-        message: t('settings.error.export', 'Failed to export UUID mappings'),
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  /**
-   * Imports UUID mappings from JSON
-   */
-  const importMappings = async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      let parsedData;
-      try {
-        parsedData = JSON.parse(importData);
-      } catch {
-        throw new Error('Invalid JSON format');
-      }
-      
-      const response = await post(`/${PLUGIN_ID}/migration/import`, {
-        mappings: parsedData,
-        dryRun,
-        overwrite: false,
-      });
-      
-      setFixReport(response.data);
-      
-      if (!dryRun && response.data.imported > 0) {
-        toggleNotification({
-          type: 'success',
-          message: t('settings.import.success', '{count} UUID(s) imported', { count: response.data.imported }),
-        });
-        await fetchStats();
-      }
-    } catch (err) {
-      setError(t('settings.error.import', 'Failed to import UUID mappings'));
-      toggleNotification({
-        type: 'danger',
-        message: err.message || t('settings.error.import', 'Failed to import UUID mappings'),
-      });
-    } finally {
-      setIsLoading(false);
-      setShowImportModal(false);
-    }
-  };
 
   useEffect(() => {
-    fetchStats();
-    fetchMigrationStatus();
-  }, [fetchStats, fetchMigrationStatus]);
-
-  const modelCount = stats?.contentTypes ?? Object.keys(models).length;
-  const fieldCount = stats?.totalFields ?? Object.values(models).reduce((sum, fields) => sum + fields.length, 0);
-  const duplicateCount = stats?.issues?.duplicates ?? diagnoseReport?.totalDuplicates ?? null;
-  const emptyCount = stats?.issues?.empty ?? null;
-  const invalidCount = stats?.issues?.invalid ?? null;
-  const totalEntries = stats?.totalEntries ?? null;
-  const needsMigration = stats?.needsMigration ?? migrationStatus?.needsMigration ?? false;
-
-  if (isLoading && !diagnoseReport) {
-    return (
-      <Container>
-        <LoaderContainer>
-          <Loader>{t('settings.loading', 'Loading...')}</Loader>
-        </LoaderContainer>
-      </Container>
+    if (isLoadingPermissions || !canRead) return undefined;
+    let cancelled = false;
+    get(`/${PLUGIN_ID}/stats`).then(
+      ({ data }) => {
+        if (cancelled) return;
+        setStats(data);
+        setLoadState('ready');
+      },
+      () => {
+        if (!cancelled) setLoadState('error');
+      }
     );
-  }
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoadingPermissions, canRead, get]);
+
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      await loadStats();
+      setLoadState('ready');
+      setChecked(false);
+    } catch (err) {
+      setLoadState((state) => (state === 'ready' ? state : 'error'));
+      toggleNotification({ type: 'danger', message: t(describeError(err)) });
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const runCheck = async () => {
+    setChecking(true);
+    try {
+      // /stats runs the full scan once and returns every count the page shows.
+      const data = await loadStats();
+      setChecked(true);
+      toggleNotification({
+        type: data?.hasErrors ? 'warning' : 'success',
+        message: data?.hasErrors
+          ? t({
+              id: getTranslation('check.incomplete'),
+              defaultMessage: 'Check finished, but some fields could not be checked.',
+            })
+          : t({ id: getTranslation('check.done'), defaultMessage: 'Check finished.' }),
+      });
+    } catch (err) {
+      toggleNotification({ type: 'danger', message: t(describeError(err)) });
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const onApplied = async (result) => {
+    toggleNotification({
+      type: 'success',
+      message: t(
+        {
+          id: getTranslation('repair.applied'),
+          defaultMessage:
+            '{count, plural, =0 {No changes were needed.} one {# change saved.} other {# changes saved.}}',
+        },
+        { count: countChanges(result) }
+      ),
+    });
+    try {
+      await loadStats();
+    } catch {
+      setLoadState('error');
+    }
+  };
+
+  const exportMappings = async () => {
+    setExporting(true);
+    try {
+      const { data } = await get(`/${PLUGIN_ID}/migration/export`);
+      // Compact JSON, split into parts the Import dialog accepts (1 MB and
+      // 10,000 values per import).
+      const parts = splitExport(data);
+      const date = new Date().toISOString().slice(0, 10);
+      for (const [index, json] of parts.entries()) {
+        if (index > 0) await new Promise((resolve) => setTimeout(resolve, 400));
+        const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download =
+          parts.length === 1
+            ? `uuid-mappings-${date}.json`
+            : `uuid-mappings-${date}-part-${index + 1}-of-${parts.length}.json`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+      }
+      toggleNotification({
+        type: 'success',
+        message:
+          parts.length === 1
+            ? t({
+                id: getTranslation('export.done'),
+                defaultMessage: 'UUID mappings exported.',
+              })
+            : t(
+                {
+                  id: getTranslation('export.doneParts'),
+                  defaultMessage:
+                    'UUID mappings exported in {count} files. Import them one at a time.',
+                },
+                { count: parts.length }
+              ),
+      });
+    } catch (err) {
+      toggleNotification({ type: 'danger', message: t(describeError(err)) });
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const title = t({ id: getTranslation('settings.title'), defaultMessage: 'UUID management' });
+
+  if (isLoadingPermissions) return <Page.Loading />;
+  if (!canRead) return <Page.NoPermissions />;
+  if (loadState === 'loading') return <Page.Loading />;
+
+  const models = stats?.models ?? {};
+  const modelEntries = Object.entries(models);
+  const fieldStats = stats?.fields ?? [];
+  const issues = stats?.issues ?? {};
+  const scanHasErrors = Boolean(stats?.hasErrors);
+  const needsRepair = Boolean(stats?.needsMigration) && !scanHasErrors;
+  const anyPending = busy || checking || exporting || refreshing;
+
+  const okLabel = t({ id: getTranslation('status.ok'), defaultMessage: 'OK' });
+  const repairLabel = t({
+    id: getTranslation('status.needsRepair'),
+    defaultMessage: 'Needs repair',
+  });
+  const statusLabel = (count) =>
+    count === null || count === undefined ? null : count > 0 ? repairLabel : okLabel;
+
+  const toggleOption = (key) => (checkedValue) => {
+    setRepairOptions((prev) => ({ ...prev, [key]: checkedValue === true }));
+    setOptionsVersion((value) => value + 1);
+  };
+  const anyOption = Object.values(repairOptions).some(Boolean);
+
+  const repairCommon = {
+    onApplied,
+    onPendingChange: setBusy,
+    disabled: anyPending || scanHasErrors,
+    applyLabel: t({ id: getTranslation('repair.apply.verb'), defaultMessage: 'Apply' }),
+    confirmBody: t({
+      id: getTranslation('repair.confirm.body'),
+      defaultMessage:
+        'Replaced UUIDs are gone for good: links, integrations and exports that use them stop working. Create a database backup or a UUID export first. This cannot be undone.',
+    }),
+  };
 
   return (
-    <Container>
-      {/* Sticky Header */}
-      <StickySaveBar paddingTop={5} paddingBottom={5} paddingLeft={6} paddingRight={6}>
-        <Flex justifyContent="space-between" alignItems="center">
-          <Box>
-            <Typography variant="alpha" fontWeight="bold" style={{ marginBottom: '4px', display: 'block' }}>
-              {t('settings.title', 'UUID Management')}
-            </Typography>
-            <Typography variant="epsilon" textColor="neutral600">
-              {t('settings.subtitle', 'Manage and maintain UUID fields across your content types')}
-            </Typography>
-          </Box>
+    <Page.Main aria-labelledby={headingId}>
+      <Page.Title>{title}</Page.Title>
+      <Layouts.Header
+        id={headingId}
+        title={title}
+        subtitle={t({
+          id: getTranslation('settings.subtitle'),
+          defaultMessage: 'Check, repair and back up the UUID fields of all content types',
+        })}
+        primaryAction={
           <Button
-            startIcon={<ArrowClockwise />}
-            onClick={() => { 
-              fetchStats(); 
-              fetchMigrationStatus();
-              setDiagnoseReport(null); 
-              setFixReport(null); 
-            }}
-            size="L"
-            style={{
-              background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
-              color: 'white',
-              fontWeight: '600',
-              border: 'none',
-              padding: '12px 24px',
-            }}
+            ref={refreshButtonRef}
+            variant="secondary"
+            startIcon={<ArrowClockwise aria-hidden />}
+            onClick={(event) => runKeepingFocus(event, refresh)}
+            loading={refreshing}
+            disabled={anyPending && !refreshing}
           >
-            {t('settings.refresh', 'Refresh')}
+            {t({ id: getTranslation('settings.refresh'), defaultMessage: 'Refresh' })}
           </Button>
-        </Flex>
-      </StickySaveBar>
-
-      {/* Content */}
-      <Box paddingTop={8} paddingLeft={6} paddingRight={6} paddingBottom={10}>
-        {/* Error Alert */}
-        {error && (
-          <Box marginBottom={6}>
-            <Alert variant="danger" closeLabel="Close" onClose={() => setError(null)}>
-              {error}
-            </Alert>
-          </Box>
-        )}
-
-        {/* Header Banner */}
-        <HeaderBanner>
-          <Flex justifyContent="space-between" alignItems="flex-start">
-            <Box>
-              <Typography style={{ 
-                color: 'rgba(255,255,255,0.7)', 
-                fontSize: '12px', 
-                textTransform: 'uppercase', 
-                letterSpacing: '1px', 
-                marginBottom: '12px', 
-                display: 'block',
-                fontWeight: '600'
-              }}>
-                {t('settings.plugin', 'Strapi Auto UUID Plugin')}
-              </Typography>
-              <Typography style={{ 
-                color: 'white', 
-                fontSize: '28px', 
-                fontWeight: '800', 
-                marginBottom: '12px',
-                display: 'block',
-                lineHeight: '1.2'
-              }}>
-                {t('settings.banner.title', 'UUID Field Manager')}
-              </Typography>
-              <Typography style={{ 
-                color: 'rgba(255,255,255,0.9)', 
-                fontSize: '15px',
-                lineHeight: '1.6',
-                maxWidth: '500px'
-              }}>
-                {t('settings.banner.description', 'Automatically generate and manage unique identifiers for your content')}
-              </Typography>
-            </Box>
-            <Badge style={{ 
-              background: 'rgba(255,255,255,0.2)', 
-              color: 'white', 
-              padding: '10px 18px', 
-              fontWeight: '700',
-              fontSize: '13px',
-              borderRadius: '8px'
-            }}>
-              v{stats?.version || '1.1.0'}
-            </Badge>
-          </Flex>
-        </HeaderBanner>
-
-        {/* Migration Warning Banner */}
-        {needsMigration && (
-          <Box marginBottom={6}>
-            <Alert 
-              variant="warning" 
-              title={t('settings.migration.needed', 'Migration Needed')}
+        }
+      />
+      <Layouts.Content>
+        <Flex direction="column" alignItems="stretch" gap={6} paddingBottom={8} minWidth={0}>
+          {loadState === 'error' && !dismissed.load && (
+            <Alert
+              closeLabel={closeLabel}
+              onClose={dismiss('load')}
+              variant="danger"
+              title={t({
+                id: getTranslation('load.error.title'),
+                defaultMessage: 'The UUID status could not be loaded',
+              })}
               action={
-                <Button variant="default" size="S" onClick={() => setShowMigrationModal(true)}>
-                  {t('settings.actions.migration', 'Run Migration')}
+                <Button
+                  variant="danger-light"
+                  size="S"
+                  onClick={(event) => runKeepingFocus(event, refresh)}
+                  loading={refreshing}
+                >
+                  {t({ id: getTranslation('common.retry'), defaultMessage: 'Try again' })}
                 </Button>
               }
             >
-              {t('settings.migration.warning', 'Some UUID fields have issues that need to be fixed. Run a migration to resolve them.')}
+              {t({
+                id: getTranslation('load.error.body'),
+                defaultMessage: 'No repairs ran. Check the connection and try again.',
+              })}
             </Alert>
-          </Box>
-        )}
+          )}
 
-        {/* Stats */}
-        <Flex gap={4} marginBottom={8} wrap="wrap">
-          <StatCard>
-            <StatLabel>{t('settings.stats.models', 'Content Types')}</StatLabel>
-            <StatValue>{modelCount}</StatValue>
-          </StatCard>
-          <StatCard>
-            <StatLabel>{t('settings.stats.fields', 'UUID Fields')}</StatLabel>
-            <StatValue>{fieldCount}</StatValue>
-          </StatCard>
-          <StatCard>
-            <StatLabel>{t('settings.stats.entries', 'Total Entries')}</StatLabel>
-            <StatValue>{totalEntries !== null ? totalEntries : '-'}</StatValue>
-          </StatCard>
-          <StatCard>
-            <StatLabel>{t('settings.stats.duplicates', 'Duplicates')}</StatLabel>
-            <StatValue $color={duplicateCount > 0 ? '#DC2626' : duplicateCount === 0 ? '#16A34A' : '#9CA3AF'}>
-              {duplicateCount !== null ? duplicateCount : '-'}
-            </StatValue>
-          </StatCard>
-          <StatCard>
-            <StatLabel>{t('settings.stats.empty', 'Empty')}</StatLabel>
-            <StatValue $color={emptyCount > 0 ? '#F59E0B' : emptyCount === 0 ? '#16A34A' : '#9CA3AF'}>
-              {emptyCount !== null ? emptyCount : '-'}
-            </StatValue>
-          </StatCard>
-          <StatCard>
-            <StatLabel>{t('settings.stats.invalid', 'Invalid')}</StatLabel>
-            <StatValue $color={invalidCount > 0 ? '#DC2626' : invalidCount === 0 ? '#16A34A' : '#9CA3AF'}>
-              {invalidCount !== null ? invalidCount : '-'}
-            </StatValue>
-          </StatCard>
-        </Flex>
+          <HeroBanner aria-labelledby={`${headingId}-hero`}>
+            <Flex justifyContent="space-between" alignItems="flex-start" gap={4} wrap="wrap">
+              <Flex
+                direction="column"
+                alignItems="flex-start"
+                gap={2}
+                minWidth={0}
+                flex="1 1 28rem"
+              >
+                <HeroText $size={1} $bold>
+                  {t({ id: getTranslation('hero.eyebrow'), defaultMessage: 'Strapi Auto UUID' })}
+                </HeroText>
+                <HeroText as="h2" id={`${headingId}-hero`} $size={5} $bold>
+                  {t({
+                    id: getTranslation('hero.title'),
+                    defaultMessage: 'Stable identifiers for your content',
+                  })}
+                </HeroText>
+                <HeroText $size={2}>
+                  {t({
+                    id: getTranslation('hero.body'),
+                    defaultMessage:
+                      'Every entry gets a UUID on save. Duplicates are rejected, and values that should not change stay locked.',
+                  })}
+                </HeroText>
+              </Flex>
+              {stats?.version && <HeroBadge>v{stats.version}</HeroBadge>}
+            </Flex>
+          </HeroBanner>
 
-        {/* Actions */}
-        <SectionTitle>
-          {t('settings.actions.title', 'Quick Actions')}
-        </SectionTitle>
-        
-        <ActionGrid>
-          <ActionCard type="button" onClick={runDiagnose} $color="#3B82F6">
-            <ActionIcon $bg="#DBEAFE" $color="#2563EB">
-              <Search />
-            </ActionIcon>
-            <ActionTitle>
-              {t('settings.actions.diagnose', 'Run Diagnosis')}
-            </ActionTitle>
-            <ActionDescription>
-              {t('settings.actions.diagnose.description', 'Scan all UUID fields for duplicates and issues. This will check every entry in your content types.')}
-            </ActionDescription>
-          </ActionCard>
-
-          <ActionCard type="button" onClick={() => { setDryRun(true); setFixReport(null); setShowFixModal(true); }} $color="#F59E0B">
-            <ActionIcon $bg="#FEF3C7" $color="#D97706">
-              <Cog />
-            </ActionIcon>
-            <ActionTitle>
-              {t('settings.actions.autofix', 'Auto-Fix Duplicates')}
-            </ActionTitle>
-            <ActionDescription>
-              {t('settings.actions.autofix.description', 'Automatically replace duplicate UUIDs with new unique values. The first occurrence will be kept.')}
-            </ActionDescription>
-          </ActionCard>
-
-          <ActionCard type="button" onClick={() => { setDryRun(true); setFixReport(null); setShowGenerateModal(true); }} $color="#10B981">
-            <ActionIcon $bg="#DCFCE7" $color="#16A34A">
-              <Plus />
-            </ActionIcon>
-            <ActionTitle>
-              {t('settings.actions.generate', 'Generate Missing UUIDs')}
-            </ActionTitle>
-            <ActionDescription>
-              {t('settings.actions.generate.description', 'Create new UUIDs for entries that have empty or missing UUID fields.')}
-            </ActionDescription>
-          </ActionCard>
-
-          <ActionCard type="button" onClick={() => { setDryRun(true); setFixReport(null); setShowMigrationModal(true); }} $color="#8B5CF6">
-            <ActionIcon $bg="#EDE9FE" $color="#7C3AED">
-              <Play />
-            </ActionIcon>
-            <ActionTitle>
-              {t('settings.actions.migration', 'Run Migration')}
-            </ActionTitle>
-            <ActionDescription>
-              {t('settings.actions.migration.description', 'Fix all UUID issues at once: empty fields, invalid formats, and duplicates.')}
-            </ActionDescription>
-          </ActionCard>
-
-          <ActionCard type="button" onClick={exportMappings} $color="#06B6D4">
-            <ActionIcon $bg="#CFFAFE" $color="#0891B2">
-              <Download />
-            </ActionIcon>
-            <ActionTitle>
-              {t('settings.actions.export', 'Export Mappings')}
-            </ActionTitle>
-            <ActionDescription>
-              {t('settings.actions.export.description', 'Download a backup of all UUID mappings as JSON for migration or backup purposes.')}
-            </ActionDescription>
-          </ActionCard>
-
-          <ActionCard type="button" onClick={() => { setDryRun(true); setImportData(''); setShowImportModal(true); }} $color="#EC4899">
-            <ActionIcon $bg="#FCE7F3" $color="#DB2777">
-              <Upload />
-            </ActionIcon>
-            <ActionTitle>
-              {t('settings.actions.import', 'Import Mappings')}
-            </ActionTitle>
-            <ActionDescription>
-              {t('settings.actions.import.description', 'Restore UUID mappings from a previously exported JSON backup file.')}
-            </ActionDescription>
-          </ActionCard>
-        </ActionGrid>
-
-        {/* Fix Report */}
-        {fixReport && (
-          <Box marginBottom={6}>
-            <Alert 
-              variant={fixReport.dryRun ? 'default' : 'success'}
-              title={fixReport.dryRun ? t('settings.report.dryrun', 'Preview (Dry Run)') : t('settings.report.result', 'Result')}
-              closeLabel="Close"
-              onClose={() => setFixReport(null)}
+          {scanHasErrors && !dismissed.scan && (
+            <Alert
+              closeLabel={closeLabel}
+              onClose={dismiss('scan')}
+              variant="warning"
+              title={t({
+                id: getTranslation('scan.incomplete.title'),
+                defaultMessage: 'Some UUID fields could not be checked',
+              })}
             >
-              {fixReport.totalFixed !== undefined && (
-                <Typography>
-                  {t('settings.report.fixed', '{count} duplicate(s) {action}', {
-                    count: fixReport.totalFixed,
-                    action: fixReport.dryRun ? 'would be fixed' : 'fixed',
-                  })}
-                </Typography>
-              )}
-              {fixReport.totalGenerated !== undefined && (
-                <Typography>
-                  {t('settings.report.generated', '{count} UUID(s) {action}', {
-                    count: fixReport.totalGenerated,
-                    action: fixReport.dryRun ? 'would be generated' : 'generated',
-                  })}
-                </Typography>
-              )}
+              {t({
+                id: getTranslation('scan.incomplete.body'),
+                defaultMessage:
+                  'Repairs are paused until every field can be checked. Review the field options in the Content-Type Builder, then refresh.',
+              })}
             </Alert>
-          </Box>
-        )}
+          )}
 
-        {/* Models Accordion */}
-        {modelCount > 0 && (
-          <Box>
-            <SectionTitle>
-              <Stack style={{ width: 20, height: 20 }} />
-              {t('settings.models.title', 'Monitored Content Types')}
-            </SectionTitle>
-            
-            <Accordion.Root defaultValue="models" collapsible>
-              <Accordion.Item value="models">
-                <Accordion.Header>
-                  <Accordion.Trigger>
-                    {modelCount} Content Type(s) with UUID fields
-                  </Accordion.Trigger>
-                </Accordion.Header>
-                <Accordion.Content>
-                  <Box padding={4}>
-                    {Object.entries(models).map(([uid, fields]) => {
-                      const duplicateInfo = diagnoseReport?.details?.[uid];
-                      const hasDuplicates = duplicateInfo && Object.values(duplicateInfo.fields).some(
-                        f => f.duplicateGroups > 0
-                      );
-                      
-                      return (
-                        <ModelRow key={uid} justifyContent="space-between" alignItems="center">
-                          <Box style={{ flex: 1 }}>
-                            <ModelName>{uid}</ModelName>
-                            <Flex gap={2}>
-                              {fields.map(field => (
-                                <FieldBadge key={field}>
-                                  {field}
-                                </FieldBadge>
-                              ))}
-                            </Flex>
-                          </Box>
-                          {diagnoseReport ? (
-                            hasDuplicates ? (
-                              <StatusBadge style={{ background: '#FEE2E2', color: '#DC2626' }}>
-                                <WarningCircle style={{ width: 16, height: 16 }} />
-                                {t('settings.status.duplicates', 'Has Duplicates')}
-                              </StatusBadge>
-                            ) : (
-                              <StatusBadge style={{ background: '#DCFCE7', color: '#16A34A' }}>
-                                <Check style={{ width: 16, height: 16 }} />
-                                {t('settings.status.ok', 'OK')}
-                              </StatusBadge>
-                            )
-                          ) : (
-                            <Typography variant="pi" textColor="neutral500" style={{ fontStyle: 'italic' }}>
-                              {t('settings.status.notScanned', 'Not scanned yet')}
-                            </Typography>
-                          )}
-                        </ModelRow>
-                      );
-                    })}
-                  </Box>
-                </Accordion.Content>
-              </Accordion.Item>
-            </Accordion.Root>
-          </Box>
-        )}
+          {needsRepair && !dismissed.repair && (
+            <Alert
+              closeLabel={closeLabel}
+              onClose={dismiss('repair')}
+              variant="warning"
+              title={t({
+                id: getTranslation('repair.needed.title'),
+                defaultMessage: 'Repair needed',
+              })}
+            >
+              {t({
+                id: getTranslation('repair.needed.body'),
+                defaultMessage:
+                  'Some entries have duplicate, malformed or missing UUIDs. Use "Repair all" to preview the changes.',
+              })}
+            </Alert>
+          )}
 
-        {modelCount === 0 && (
-          <Box padding={8} background="neutral100" hasRadius style={{ textAlign: 'center' }}>
-            <Typography variant="omega" textColor="neutral600" style={{ fontSize: '15px' }}>
-              {t('settings.noModels', 'No content types with UUID fields found. Add the UUID custom field to your content types to get started.')}
+          <Box tag="section" aria-labelledby={`${headingId}-stats`}>
+            <Typography variant="delta" tag="h2" id={`${headingId}-stats`} textColor="neutral800">
+              {t({ id: getTranslation('stats.title'), defaultMessage: 'Overview' })}
             </Typography>
+            <Box paddingTop={4}>
+              <Grid.Root gap={4}>
+                {[
+                  {
+                    key: 'models',
+                    label: t({
+                      id: getTranslation('stats.models'),
+                      defaultMessage: 'Content types',
+                    }),
+                    value: stats?.contentTypes,
+                  },
+                  {
+                    key: 'fields',
+                    label: t({ id: getTranslation('stats.fields'), defaultMessage: 'UUID fields' }),
+                    value: stats?.totalFields,
+                  },
+                  {
+                    key: 'entries',
+                    label: t({ id: getTranslation('stats.entries'), defaultMessage: 'Entries' }),
+                    value: stats?.totalEntries,
+                  },
+                  {
+                    key: 'duplicates',
+                    label: t({
+                      id: getTranslation('stats.duplicates'),
+                      defaultMessage: 'Duplicates',
+                    }),
+                    value: issues.duplicates,
+                    tone: toneFor(issues.duplicates, 'danger'),
+                    status: statusLabel(issues.duplicates),
+                  },
+                  {
+                    key: 'empty',
+                    label: t({ id: getTranslation('stats.empty'), defaultMessage: 'Empty' }),
+                    value: issues.empty,
+                    tone: toneFor(issues.empty, 'warning'),
+                    status: statusLabel(issues.empty),
+                  },
+                  {
+                    key: 'invalid',
+                    label: t({ id: getTranslation('stats.invalid'), defaultMessage: 'Malformed' }),
+                    value: issues.invalid,
+                    tone: toneFor(issues.invalid, 'danger'),
+                    status: statusLabel(issues.invalid),
+                    hint:
+                      issues.legacy > 0
+                        ? t(
+                            {
+                              id: getTranslation('stats.legacy'),
+                              defaultMessage:
+                                '{count, plural, one {# value uses an older version or prefix} other {# values use an older version or prefix}}',
+                            },
+                            { count: issues.legacy }
+                          )
+                        : null,
+                  },
+                ].map(({ key, ...card }) => (
+                  <Grid.Item
+                    key={key}
+                    col={4}
+                    s={6}
+                    xs={12}
+                    direction="column"
+                    alignItems="stretch"
+                  >
+                    <StatCard
+                      label={card.label}
+                      value={card.value}
+                      tone={card.tone}
+                      statusLabel={card.status}
+                      hint={card.hint}
+                    />
+                  </Grid.Item>
+                ))}
+              </Grid.Root>
+            </Box>
           </Box>
-        )}
-      </Box>
 
-      {/* Auto-Fix Modal */}
-      {showFixModal && (
-        <Modal.Root open={showFixModal} onOpenChange={setShowFixModal}>
-          <Modal.Content>
-            <Modal.Header>
-              <Modal.Title>
-                {t('settings.modal.autofix.title', 'Auto-Fix Duplicate UUIDs')}
-              </Modal.Title>
-            </Modal.Header>
-            <Modal.Body>
-              <Flex direction="column" gap={4}>
-                <Typography style={{ lineHeight: '1.6' }}>
-                  {t('settings.modal.autofix.description', 'This will scan all UUID fields and replace duplicate values with new unique UUIDs. The first occurrence of each duplicate will be kept.')}
-                </Typography>
-                
-                <Checkbox 
-                  checked={dryRun} 
-                  onCheckedChange={(checked) => setDryRun(checked)}
-                >
-                  {t('settings.modal.dryrun', 'Dry Run (preview only, no changes)')}
-                </Checkbox>
-
-                {!dryRun && (
-                  <Alert variant="warning">
-                    {t('settings.modal.warning', 'Warning: This action will modify data in your database. Make sure you have a backup.')}
-                  </Alert>
-                )}
-              </Flex>
-            </Modal.Body>
-            <Modal.Footer>
-              <Modal.Close>
-                <Button variant="tertiary">
-                  {t('settings.modal.cancel', 'Cancel')}
-                </Button>
-              </Modal.Close>
-              <Button 
-                onClick={runAutoFix} 
-                loading={isLoading}
-                variant={dryRun ? 'secondary' : 'danger'}
-              >
-                {dryRun 
-                  ? t('settings.modal.preview', 'Preview Changes')
-                  : t('settings.modal.confirm', 'Fix Duplicates')
-                }
-              </Button>
-            </Modal.Footer>
-          </Modal.Content>
-        </Modal.Root>
-      )}
-
-      {/* Generate Missing Modal */}
-      {showGenerateModal && (
-        <Modal.Root open={showGenerateModal} onOpenChange={setShowGenerateModal}>
-          <Modal.Content>
-            <Modal.Header>
-              <Modal.Title>
-                {t('settings.modal.generate.title', 'Generate Missing UUIDs')}
-              </Modal.Title>
-            </Modal.Header>
-            <Modal.Body>
-              <Flex direction="column" gap={4}>
-                <Typography style={{ lineHeight: '1.6' }}>
-                  {t('settings.modal.generate.description', 'This will find all entries with empty UUID fields and generate new UUIDs for them.')}
-                </Typography>
-                
-                <Checkbox 
-                  checked={dryRun} 
-                  onCheckedChange={(checked) => setDryRun(checked)}
-                >
-                  {t('settings.modal.dryrun', 'Dry Run (preview only, no changes)')}
-                </Checkbox>
-
-                {!dryRun && (
-                  <Alert variant="warning">
-                    {t('settings.modal.warning', 'Warning: This action will modify data in your database. Make sure you have a backup.')}
-                  </Alert>
-                )}
-              </Flex>
-            </Modal.Body>
-            <Modal.Footer>
-              <Modal.Close>
-                <Button variant="tertiary">
-                  {t('settings.modal.cancel', 'Cancel')}
-                </Button>
-              </Modal.Close>
-              <Button 
-                onClick={runGenerateMissing} 
-                loading={isLoading}
-                variant={dryRun ? 'secondary' : 'success'}
-              >
-                {dryRun 
-                  ? t('settings.modal.preview', 'Preview Changes')
-                  : t('settings.modal.generate.confirm', 'Generate UUIDs')
-                }
-              </Button>
-            </Modal.Footer>
-          </Modal.Content>
-        </Modal.Root>
-      )}
-
-      {/* Migration Modal */}
-      {showMigrationModal && (
-        <Modal.Root open={showMigrationModal} onOpenChange={setShowMigrationModal}>
-          <Modal.Content>
-            <Modal.Header>
-              <Modal.Title>
-                {t('settings.modal.migration.title', 'Run Full Migration')}
-              </Modal.Title>
-            </Modal.Header>
-            <Modal.Body>
-              <Flex direction="column" gap={4}>
-                <Typography style={{ lineHeight: '1.6' }}>
-                  {t('settings.modal.migration.description', 'This will fix all UUID issues including empty fields, invalid formats, and duplicates.')}
-                </Typography>
-                
-                <Box>
-                  <Typography variant="sigma" style={{ marginBottom: '12px', display: 'block' }}>
-                    {t('settings.modal.migration.options', 'Migration Options')}
-                  </Typography>
-                  <Flex direction="column" gap={2}>
-                    <Checkbox 
-                      checked={migrationOptions.fixEmpty} 
-                      onCheckedChange={(checked) => setMigrationOptions(prev => ({ ...prev, fixEmpty: checked }))}
-                    >
-                      {t('settings.modal.migration.fixEmpty', 'Fix empty UUIDs')}
-                    </Checkbox>
-                    <Checkbox 
-                      checked={migrationOptions.fixInvalid} 
-                      onCheckedChange={(checked) => setMigrationOptions(prev => ({ ...prev, fixInvalid: checked }))}
-                    >
-                      {t('settings.modal.migration.fixInvalid', 'Fix invalid UUIDs')}
-                    </Checkbox>
-                    <Checkbox 
-                      checked={migrationOptions.fixDuplicates} 
-                      onCheckedChange={(checked) => setMigrationOptions(prev => ({ ...prev, fixDuplicates: checked }))}
-                    >
-                      {t('settings.modal.migration.fixDuplicates', 'Fix duplicate UUIDs')}
-                    </Checkbox>
-                  </Flex>
-                </Box>
-                
-                <Checkbox 
-                  checked={dryRun} 
-                  onCheckedChange={(checked) => setDryRun(checked)}
-                >
-                  {t('settings.modal.dryrun', 'Dry Run (preview only, no changes)')}
-                </Checkbox>
-
-                {!dryRun && (
-                  <Alert variant="warning">
-                    {t('settings.modal.warning', 'Warning: This action will modify data in your database. Make sure you have a backup.')}
-                  </Alert>
-                )}
-              </Flex>
-            </Modal.Body>
-            <Modal.Footer>
-              <Modal.Close>
-                <Button variant="tertiary">
-                  {t('settings.modal.cancel', 'Cancel')}
-                </Button>
-              </Modal.Close>
-              <Button 
-                onClick={runMigration} 
-                loading={isLoading}
-                variant={dryRun ? 'secondary' : 'danger'}
-              >
-                {dryRun 
-                  ? t('settings.modal.preview', 'Preview Changes')
-                  : t('settings.modal.run', 'Run Migration')
-                }
-              </Button>
-            </Modal.Footer>
-          </Modal.Content>
-        </Modal.Root>
-      )}
-
-      {/* Import Modal */}
-      {showImportModal && (
-        <Modal.Root open={showImportModal} onOpenChange={setShowImportModal}>
-          <LargeModalContent>
-            <Modal.Header>
-              <Modal.Title>
-                {t('settings.modal.import.title', 'Import UUID Mappings')}
-              </Modal.Title>
-            </Modal.Header>
-            <Modal.Body>
-              <Flex direction="column" gap={4}>
-                <Typography style={{ lineHeight: '1.6' }}>
-                  {t('settings.modal.import.description', 'Paste the JSON content from a previously exported UUID mappings file.')}
-                </Typography>
-                
-                <Box>
-                  <ImportTextarea
-                    value={importData}
-                    onChange={(e) => setImportData(e.target.value)}
-                    placeholder={`{
-  "exportedAt": "2024-01-01T00:00:00.000Z",
-  "version": "1.0.0",
-  "mappings": {
-    "api::article.article": {
-      "fields": {
-        "uuid": [
-          { "documentId": "abc123", "uuid": "550e8400-e29b-..." }
-        ]
-      }
-    }
-  }
-}`}
+          <Box tag="section" aria-labelledby={`${headingId}-actions`}>
+            <Typography variant="delta" tag="h2" id={`${headingId}-actions`} textColor="neutral800">
+              {t({ id: getTranslation('actions.title'), defaultMessage: 'Actions' })}
+            </Typography>
+            <Box paddingTop={4}>
+              <Grid.Root gap={4}>
+                <Grid.Item col={4} s={6} xs={12} direction="column" alignItems="stretch">
+                  <ActionCard
+                    icon={Search}
+                    tone="primary"
+                    onClick={(event) => runKeepingFocus(event, runCheck)}
+                    disabled={anyPending}
+                    aria-busy={checking}
+                    title={t({ id: getTranslation('actions.check'), defaultMessage: 'Run check' })}
+                    description={t({
+                      id: getTranslation('actions.check.description'),
+                      defaultMessage:
+                        'Scan every UUID field, in all locales and in drafts and published versions.',
+                    })}
                   />
-                </Box>
-                
-                <Checkbox 
-                  checked={dryRun} 
-                  onCheckedChange={(checked) => setDryRun(checked)}
-                >
-                  {t('settings.modal.dryrun', 'Dry Run (preview only, no changes)')}
-                </Checkbox>
+                </Grid.Item>
 
-                {!dryRun && (
-                  <Alert variant="warning">
-                    {t('settings.modal.warning', 'Warning: This action will modify data in your database. Make sure you have a backup.')}
-                  </Alert>
+                {canMigrate && (
+                  <Grid.Item col={4} s={6} xs={12} direction="column" alignItems="stretch">
+                    <RepairDialog
+                      {...repairCommon}
+                      endpoint={`/${PLUGIN_ID}/migration/run`}
+                      buildBody={(dryRun) => (anyOption ? { dryRun, ...repairOptions } : null)}
+                      resetKey={optionsVersion}
+                      title={t({
+                        id: getTranslation('repair.all.title'),
+                        defaultMessage: 'Repair all',
+                      })}
+                      description={t({
+                        id: getTranslation('repair.all.description'),
+                        defaultMessage:
+                          'Choose what to repair, preview the changes, then apply them. The oldest entry keeps a shared UUID; draft and published versions stay in sync.',
+                      })}
+                      confirmTitle={t({
+                        id: getTranslation('repair.all.confirm'),
+                        defaultMessage: 'Apply these UUID repairs?',
+                      })}
+                      trigger={
+                        <ActionCard
+                          icon={Sparkle}
+                          tone="alternative"
+                          title={t({
+                            id: getTranslation('repair.all.title'),
+                            defaultMessage: 'Repair all',
+                          })}
+                          description={t({
+                            id: getTranslation('actions.repair.description'),
+                            defaultMessage:
+                              'Replace duplicate and malformed UUIDs and fill empty fields in one run.',
+                          })}
+                        />
+                      }
+                    >
+                      <Fieldset>
+                        <Typography variant="sigma" tag="legend" textColor="neutral600">
+                          {t({ id: getTranslation('repair.options'), defaultMessage: 'Repair' })}
+                        </Typography>
+                        <Checkbox
+                          checked={repairOptions.fixDuplicates}
+                          onCheckedChange={toggleOption('fixDuplicates')}
+                        >
+                          {t({
+                            id: getTranslation('repair.option.duplicates'),
+                            defaultMessage: 'Duplicate UUIDs',
+                          })}
+                        </Checkbox>
+                        <Checkbox
+                          checked={repairOptions.fixInvalid}
+                          onCheckedChange={toggleOption('fixInvalid')}
+                        >
+                          {t({
+                            id: getTranslation('repair.option.invalid'),
+                            defaultMessage: 'Malformed values',
+                          })}
+                        </Checkbox>
+                        <Checkbox
+                          checked={repairOptions.fixEmpty}
+                          onCheckedChange={toggleOption('fixEmpty')}
+                        >
+                          {t({
+                            id: getTranslation('repair.option.empty'),
+                            defaultMessage: 'Empty fields',
+                          })}
+                        </Checkbox>
+                        <Checkbox
+                          checked={repairOptions.fixLegacy}
+                          onCheckedChange={toggleOption('fixLegacy')}
+                        >
+                          {t({
+                            id: getTranslation('repair.option.legacy'),
+                            defaultMessage: 'Values in an older version or prefix (usually kept)',
+                          })}
+                        </Checkbox>
+                        {!anyOption && (
+                          <Typography variant="pi" textColor="danger600">
+                            {t({
+                              id: getTranslation('repair.option.required'),
+                              defaultMessage: 'Select at least one option.',
+                            })}
+                          </Typography>
+                        )}
+                      </Fieldset>
+                    </RepairDialog>
+                  </Grid.Item>
                 )}
-              </Flex>
-            </Modal.Body>
-            <Modal.Footer>
-              <Modal.Close>
-                <Button variant="tertiary">
-                  {t('settings.modal.cancel', 'Cancel')}
-                </Button>
-              </Modal.Close>
-              <Button 
-                onClick={importMappings} 
-                loading={isLoading}
-                variant={dryRun ? 'secondary' : 'success'}
-                disabled={!importData.trim()}
-              >
-                {dryRun 
-                  ? t('settings.modal.preview', 'Preview Changes')
-                  : t('settings.modal.import.confirm', 'Import Mappings')
-                }
-              </Button>
-            </Modal.Footer>
-          </LargeModalContent>
-        </Modal.Root>
-      )}
-    </Container>
+
+                {canMigrate && (
+                  <Grid.Item col={4} s={6} xs={12} direction="column" alignItems="stretch">
+                    <RepairDialog
+                      {...repairCommon}
+                      endpoint={`/${PLUGIN_ID}/autofix`}
+                      buildBody={(dryRun) => ({ dryRun })}
+                      title={t({
+                        id: getTranslation('repair.duplicates.title'),
+                        defaultMessage: 'Replace duplicates',
+                      })}
+                      description={t({
+                        id: getTranslation('repair.duplicates.description'),
+                        defaultMessage:
+                          'When several entries share a UUID, the oldest keeps it and the others get a new one.',
+                      })}
+                      confirmTitle={t({
+                        id: getTranslation('repair.duplicates.confirm'),
+                        defaultMessage: 'Replace the duplicate UUIDs?',
+                      })}
+                      trigger={
+                        <ActionCard
+                          icon={WarningCircle}
+                          tone="danger"
+                          title={t({
+                            id: getTranslation('repair.duplicates.title'),
+                            defaultMessage: 'Replace duplicates',
+                          })}
+                          description={t({
+                            id: getTranslation('actions.duplicates.description'),
+                            defaultMessage:
+                              'Give every entry that shares a UUID with an older entry a new one.',
+                          })}
+                        />
+                      }
+                    />
+                  </Grid.Item>
+                )}
+
+                {canMigrate && (
+                  <Grid.Item col={4} s={6} xs={12} direction="column" alignItems="stretch">
+                    <RepairDialog
+                      {...repairCommon}
+                      endpoint={`/${PLUGIN_ID}/generate-missing`}
+                      buildBody={(dryRun) => ({ dryRun })}
+                      title={t({
+                        id: getTranslation('repair.missing.title'),
+                        defaultMessage: 'Generate missing UUIDs',
+                      })}
+                      description={t({
+                        id: getTranslation('repair.missing.description'),
+                        defaultMessage:
+                          'Fill empty UUID fields. Fields with auto-generation turned off are left empty.',
+                      })}
+                      confirmTitle={t({
+                        id: getTranslation('repair.missing.confirm'),
+                        defaultMessage: 'Generate the missing UUIDs?',
+                      })}
+                      confirmBody={t({
+                        id: getTranslation('repair.missing.confirmBody'),
+                        defaultMessage:
+                          'Empty UUID fields get a new value. Existing values are not changed.',
+                      })}
+                      trigger={
+                        <ActionCard
+                          icon={Plus}
+                          tone="success"
+                          title={t({
+                            id: getTranslation('repair.missing.title'),
+                            defaultMessage: 'Generate missing UUIDs',
+                          })}
+                          description={t({
+                            id: getTranslation('actions.missing.description'),
+                            defaultMessage:
+                              'Fill entries that were created before the UUID field existed.',
+                          })}
+                        />
+                      }
+                    />
+                  </Grid.Item>
+                )}
+
+                {canExport && (
+                  <Grid.Item col={4} s={6} xs={12} direction="column" alignItems="stretch">
+                    <ActionCard
+                      icon={Download}
+                      tone="secondary"
+                      onClick={(event) => runKeepingFocus(event, exportMappings)}
+                      disabled={anyPending}
+                      aria-busy={exporting}
+                      title={t({
+                        id: getTranslation('actions.export'),
+                        defaultMessage: 'Export UUIDs',
+                      })}
+                      description={t({
+                        id: getTranslation('actions.export.description'),
+                        defaultMessage: 'Download every UUID with its entry as a JSON backup.',
+                      })}
+                    />
+                  </Grid.Item>
+                )}
+
+                {canImport && (
+                  <Grid.Item col={4} s={6} xs={12} direction="column" alignItems="stretch">
+                    <ImportDialog
+                      onApplied={onApplied}
+                      onPendingChange={setBusy}
+                      disabled={anyPending}
+                      trigger={
+                        <ActionCard
+                          icon={Upload}
+                          tone="warning"
+                          title={t({
+                            id: getTranslation('actions.import'),
+                            defaultMessage: 'Import UUIDs',
+                          })}
+                          description={t({
+                            id: getTranslation('actions.import.description'),
+                            defaultMessage: 'Restore UUIDs from an export into empty fields.',
+                          })}
+                        />
+                      }
+                    />
+                  </Grid.Item>
+                )}
+              </Grid.Root>
+            </Box>
+          </Box>
+
+          <Box tag="section" aria-labelledby={`${headingId}-models`}>
+            <Typography variant="delta" tag="h2" id={`${headingId}-models`} textColor="neutral800">
+              {t({
+                id: getTranslation('models.title'),
+                defaultMessage: 'Content types with UUID fields',
+              })}
+            </Typography>
+            <Box paddingTop={4}>
+              {modelEntries.length === 0 ? (
+                <Card>
+                  <Typography tag="p" variant="omega" textColor="neutral600">
+                    {loadState === 'error'
+                      ? t({
+                          id: getTranslation('models.unavailable'),
+                          defaultMessage: 'The list is not available until the status loads.',
+                        })
+                      : t({
+                          id: getTranslation('models.empty'),
+                          defaultMessage:
+                            'No content type has a UUID field yet. Add the UUID custom field in the Content-Type Builder.',
+                        })}
+                  </Typography>
+                </Card>
+              ) : (
+                <ModelList>
+                  {modelEntries.map(([uid, fields]) => {
+                    const rows = fieldStats.filter((row) => row.uid === uid);
+                    const failed = rows.some((row) => row.scanFailed);
+                    const problems = rows.reduce(
+                      (sum, row) =>
+                        sum +
+                        (row.duplicateCount || 0) +
+                        (row.invalidCount || 0) +
+                        (row.emptyCount || 0),
+                      0
+                    );
+                    const tone = failed ? 'warning' : problems > 0 ? 'danger' : 'success';
+                    return (
+                      <ModelRow key={uid}>
+                        <Flex
+                          direction="column"
+                          alignItems="flex-start"
+                          gap={2}
+                          minWidth={0}
+                          flex="1 1 24rem"
+                        >
+                          <Typography variant="omega" fontWeight="bold" textColor="neutral800">
+                            <Mono>{uid}</Mono>
+                          </Typography>
+                          <Flex gap={2} wrap="wrap">
+                            {fields.map((field) => (
+                              <Badge key={field} {...BADGE_TONES.neutral}>
+                                {field}
+                              </Badge>
+                            ))}
+                          </Flex>
+                        </Flex>
+                        <Badge {...BADGE_TONES[tone]}>
+                          <Flex gap={1} alignItems="center">
+                            {tone === 'success' ? (
+                              <Check aria-hidden />
+                            ) : (
+                              <WarningCircle aria-hidden />
+                            )}
+                            {failed
+                              ? t({
+                                  id: getTranslation('status.scanFailed'),
+                                  defaultMessage: 'Not checked',
+                                })
+                              : problems > 0
+                                ? t(
+                                    {
+                                      id: getTranslation('status.problems'),
+                                      defaultMessage:
+                                        '{count, plural, one {# problem} other {# problems}}',
+                                    },
+                                    { count: problems }
+                                  )
+                                : okLabel}
+                          </Flex>
+                        </Badge>
+                      </ModelRow>
+                    );
+                  })}
+                </ModelList>
+              )}
+              {checked && (
+                <Box paddingTop={3}>
+                  <Typography variant="pi" textColor="neutral600">
+                    {t({
+                      id: getTranslation('check.lastRun'),
+                      defaultMessage: 'Counts are from the check you just ran.',
+                    })}
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          </Box>
+        </Flex>
+      </Layouts.Content>
+    </Page.Main>
   );
 };
 

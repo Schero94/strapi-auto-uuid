@@ -1,34 +1,63 @@
 /**
- * strapi-auto-uuid - Admin Entry Point
+ * strapi-auto-uuid admin entry: registers the UUID custom field for the
+ * Content-Type Builder and Content Manager, and the "UUID management"
+ * settings page.
  *
- * Registers the UUID custom field and settings page in the Strapi admin panel.
  * @see https://docs.strapi.io/cms/features/custom-fields
+ * @see https://docs.strapi.io/cms/plugins-development/admin-panel-api
  */
+// The Content-Type Builder merges `options.validator` into its own yup 0.32
+// object schema, so it must return yup schemas (Strapi custom-field contract).
+// yup is pinned to the exact version Strapi 5 uses; zod cannot be used here.
+import * as yup from 'yup';
 import { PLUGIN_ID } from './pluginId';
 import { Initializer } from './components/Initializer';
 import { PluginIcon } from './components/PluginIcon';
+import { getTranslation } from './utils/getTranslation';
+import { PERMISSIONS } from './utils/permissions';
+import { SUPPORTED_UUID_VERSIONS, UUID_PREFIX_PATTERN } from '../../shared/uuid-field.js';
 
 /**
- * Prefix translation keys with pluginId
- * @param {Object} data - Translation data
- * @param {string} pluginId - Plugin identifier
- * @returns {Object} Prefixed translations
+ * Prefixes translation keys with the plugin id.
+ *
+ * @param {Record<string, string>} data Translation catalogue.
+ * @returns {Record<string, string>} Prefixed catalogue.
  */
-const prefixPluginTranslations = (data, pluginId) => {
-  const prefixed = {};
-  Object.keys(data).forEach((key) => {
-    prefixed[`${pluginId}.${key}`] = data[key];
-  });
-  return prefixed;
-};
+const prefixPluginTranslations = (data) =>
+  Object.fromEntries(Object.entries(data).map(([key, value]) => [`${PLUGIN_ID}.${key}`, value]));
+
+/**
+ * Returns the yup schemas the Content-Type Builder uses to validate the
+ * field options. Error messages are translation ids: the builder passes the
+ * message to `formatMessage` as the id.
+ *
+ * @returns {Record<string, import('yup').AnySchema>} Option schemas.
+ */
+export const uuidOptionsValidator = () => ({
+  'uuid-version': yup
+    .string()
+    .oneOf([...SUPPORTED_UUID_VERSIONS])
+    .default('v4'),
+  'uuid-prefix': yup
+    .string()
+    .max(16, getTranslation('field.options.prefix.error'))
+    .matches(UUID_PREFIX_PATTERN, {
+      excludeEmptyString: true,
+      message: getTranslation('field.options.prefix.error'),
+    })
+    .nullable()
+    .notRequired(),
+  'disable-auto-generate': yup.boolean().notRequired(),
+  'allow-edit': yup.boolean().notRequired(),
+});
 
 export default {
   /**
-   * Register the plugin, custom field, and settings section
-   * @param {Object} app - Strapi admin app instance
+   * Registers the plugin, the custom field and the settings link.
+   *
+   * @param {Object} app Strapi admin application.
    */
   register(app) {
-    // Register the plugin
     app.registerPlugin({
       id: PLUGIN_ID,
       initializer: Initializer,
@@ -36,53 +65,61 @@ export default {
       name: PLUGIN_ID,
     });
 
-    // Register the UUID Custom Field
     app.customFields.register({
       name: 'uuid',
       pluginId: PLUGIN_ID,
       type: 'string',
-      
-      intlLabel: {
-        id: `${PLUGIN_ID}.form.label`,
-        defaultMessage: 'UUID',
-      },
-      
+      intlLabel: { id: getTranslation('form.label'), defaultMessage: 'UUID' },
       intlDescription: {
-        id: `${PLUGIN_ID}.form.description`,
-        defaultMessage: 'Automatically generates UUID v4',
+        id: getTranslation('form.description'),
+        defaultMessage: 'Generates a UUID v4 or v7 for each entry',
       },
-      
       icon: PluginIcon,
-      
       components: {
         Input: async () =>
-          import('./components/Input').then((module) => ({
-            default: module.default,
-          })),
+          import('./components/Input').then((module) => ({ default: module.default })),
       },
-      
       options: {
         base: [
           {
             sectionTitle: {
-              id: `${PLUGIN_ID}.field.options.uuid`,
-              defaultMessage: 'UUID Options',
+              id: getTranslation('field.options.uuid'),
+              defaultMessage: 'UUID options',
             },
             items: [
               {
                 name: 'options.uuid-version',
                 type: 'select',
                 intlLabel: {
-                  id: `${PLUGIN_ID}.field.options.version`,
-                  defaultMessage: 'UUID Version',
+                  id: getTranslation('field.options.version'),
+                  defaultMessage: 'UUID version',
                 },
                 description: {
-                  id: `${PLUGIN_ID}.field.options.version.description`,
-                  defaultMessage: 'v4 is random, v7 is time-sortable (recommended for new projects)',
+                  id: getTranslation('field.options.version.description'),
+                  defaultMessage:
+                    'v4 is random. v7 is time-sortable and recommended for new fields. Changing the version later keeps existing values.',
                 },
                 options: [
-                  { value: 'v4', label: 'UUID v4 (Random)' },
-                  { value: 'v7', label: 'UUID v7 (Time-sortable)' },
+                  {
+                    key: 'v4',
+                    value: 'v4',
+                    metadatas: {
+                      intlLabel: {
+                        id: getTranslation('field.options.version.v4'),
+                        defaultMessage: 'UUID v4 (random)',
+                      },
+                    },
+                  },
+                  {
+                    key: 'v7',
+                    value: 'v7',
+                    metadatas: {
+                      intlLabel: {
+                        id: getTranslation('field.options.version.v7'),
+                        defaultMessage: 'UUID v7 (time-sortable)',
+                      },
+                    },
+                  },
                 ],
                 defaultValue: 'v4',
               },
@@ -90,12 +127,13 @@ export default {
                 name: 'options.uuid-prefix',
                 type: 'text',
                 intlLabel: {
-                  id: `${PLUGIN_ID}.field.options.prefix`,
+                  id: getTranslation('field.options.prefix'),
                   defaultMessage: 'Prefix (optional)',
                 },
                 description: {
-                  id: `${PLUGIN_ID}.field.options.prefix.description`,
-                  defaultMessage: 'Add a prefix to all UUIDs (e.g., "usr_" for user IDs)',
+                  id: getTranslation('field.options.prefix.description'),
+                  defaultMessage:
+                    'Up to 16 letters, numbers, underscores or hyphens added before every UUID, for example usr_',
                 },
               },
             ],
@@ -103,108 +141,103 @@ export default {
         ],
         advanced: [
           {
-            sectionTitle: {
-              id: 'global.settings',
-              defaultMessage: 'Settings',
-            },
+            sectionTitle: { id: 'global.settings', defaultMessage: 'Settings' },
             items: [
+              {
+                name: 'unique',
+                type: 'checkbox',
+                intlLabel: {
+                  id: getTranslation('field.options.unique'),
+                  defaultMessage: 'Unique values',
+                },
+                description: {
+                  id: getTranslation('field.options.unique.description'),
+                  defaultMessage:
+                    'Strapi also checks uniqueness when an entry is published. This is not a database constraint; the plugin rejects duplicates on every save.',
+                },
+                defaultValue: true,
+              },
               {
                 name: 'private',
                 type: 'checkbox',
                 intlLabel: {
-                  id: `${PLUGIN_ID}.settings.private`,
+                  id: getTranslation('field.options.private'),
                   defaultMessage: 'Private field',
                 },
                 description: {
-                  id: `${PLUGIN_ID}.settings.private.description`,
-                  defaultMessage: 'This field will not show up in the API response',
+                  id: getTranslation('field.options.private.description'),
+                  defaultMessage: 'The field is not returned by the API',
                 },
               },
               {
                 name: 'options.disable-auto-generate',
                 type: 'checkbox',
                 intlLabel: {
-                  id: `${PLUGIN_ID}.field.options.disableAutoGenerate`,
+                  id: getTranslation('field.options.disableAutoGenerate'),
                   defaultMessage: 'Disable auto-generation',
                 },
                 description: {
-                  id: `${PLUGIN_ID}.field.options.disableAutoGenerate.description`,
-                  defaultMessage: 'Do not auto-generate UUID on create (must be provided manually)',
+                  id: getTranslation('field.options.disableAutoGenerate.description'),
+                  defaultMessage:
+                    'Editors enter the UUID themselves. Without manual editing it can be entered once and is then locked.',
                 },
               },
               {
                 name: 'options.allow-edit',
                 type: 'checkbox',
                 intlLabel: {
-                  id: `${PLUGIN_ID}.field.options.allowEdit`,
+                  id: getTranslation('field.options.allowEdit'),
                   defaultMessage: 'Allow manual editing',
                 },
                 description: {
-                  id: `${PLUGIN_ID}.field.options.allowEdit.description`,
-                  defaultMessage: 'Allow users to manually edit the UUID value',
+                  id: getTranslation('field.options.allowEdit.description'),
+                  defaultMessage:
+                    'Editors and API clients can set and change the UUID. When off, the server generates it and it cannot be changed.',
                 },
               },
             ],
           },
         ],
-        validator: () => ({}),
+        validator: uuidOptionsValidator,
       },
     });
 
-    // Add Settings section under /admin/settings/field-uuid
-    app.createSettingSection(
+    app.addSettingsLink(
       {
         id: PLUGIN_ID,
-        intlLabel: { 
-          id: `${PLUGIN_ID}.settings.section`, 
-          defaultMessage: 'Auto UUID' 
-        },
+        intlLabel: { id: getTranslation('settings.section'), defaultMessage: 'Auto UUID' },
       },
-      [
-        {
-          intlLabel: {
-            id: `${PLUGIN_ID}.settings.management`,
-            defaultMessage: 'UUID Management',
-          },
-          id: 'management',
-          to: `${PLUGIN_ID}/management`,
-          Component: () => import('./pages/SettingsPage'),
+      {
+        id: 'management',
+        to: `${PLUGIN_ID}/management`,
+        intlLabel: {
+          id: getTranslation('settings.management'),
+          defaultMessage: 'UUID management',
         },
-      ]
+        Component: () => import('./pages/SettingsPage'),
+        permissions: PERMISSIONS.read,
+      }
     );
-
   },
 
   /**
-   * Bootstrap the plugin after all registrations
-   * @param {Object} app - Strapi admin app instance
-   */
-  async bootstrap(app) {
-    // post-registration setup
-  },
-
-  /**
-   * Register translations for i18n support
-   * @param {Object} params - Locale information
-   * @returns {Promise<Array>} Translated data for each locale
+   * Loads the plugin translations for the admin locales. Unknown locales
+   * fall back to English.
+   *
+   * @param {{ locales: string[] }} params Admin locales.
+   * @returns {Promise<Array<{ data: Record<string, string>, locale: string }>>}
    */
   async registerTrads({ locales }) {
-    const importedTrads = await Promise.all(
+    return Promise.all(
       locales.map(async (locale) => {
         try {
           const { default: data } = await import(`./translations/${locale}.json`);
-          return { data: prefixPluginTranslations(data, PLUGIN_ID), locale };
+          return { data: prefixPluginTranslations(data), locale };
         } catch {
-          try {
-            const { default: data } = await import('./translations/en.json');
-            return { data: prefixPluginTranslations(data, PLUGIN_ID), locale };
-          } catch {
-            return { data: {}, locale };
-          }
+          const { default: data } = await import('./translations/en.json');
+          return { data: prefixPluginTranslations(data), locale };
         }
       })
     );
-
-    return importedTrads;
   },
 };

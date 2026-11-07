@@ -1,0 +1,103 @@
+/* Page-specific styles for the Auto UUID project site.
+   site.css is the shared workbench theme and must stay byte-identical to
+   templates/plugin-pages/site.css; everything specific to this page lives here. */
+
+/* Long inline code (environment variable names) wraps instead of widening
+   the page on phones. */
+p code,
+.callout code,
+td code {
+  overflow-wrap: anywhere;
+}
+
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 0 0 1rem;
+}
+.gallery figure {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--white);
+}
+.gallery a {
+  display: block;
+  line-height: 0;
+}
+.gallery img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-bottom: 1px solid var(--line);
+}
+.gallery figcaption {
+  padding: 0.6rem 0.8rem;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+.gallery-mobile {
+  grid-template-columns: repeat(2, minmax(0, 240px));
+}
+
+@media (max-width: 820px) {
+  /* The horizontal section nav must scroll inside its 1fr track instead of
+     widening the page (it overflowed by 50 px at 390 and 120 px at 320). */
+  .side-nav {
+    min-width: 0;
+  }
+  .gallery {
+    grid-template-columns: 1fr;
+  }
+  .gallery-mobile {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Dark mode. site.css is shared and light only, so the page overrides its
+   tokens and the few hard-coded light colours here. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --ink: #e8ebf5;
+    --muted: #a7afc4;
+    --line: #2c3350;
+    --paper: #0f1222;
+    --white: #171b2e;
+  }
+  a {
+    color: #b4a6ff;
+  }
+  a:hover {
+    color: #d6ceff;
+  }
+  .side-nav a {
+    color: #c3c9db;
+  }
+  .side-nav a:hover {
+    background: #262a48;
+  }
+  .callout {
+    color: #d5dbea;
+    background: #12303a;
+  }
+  .callout.warning {
+    background: #3a2d12;
+  }
+  th {
+    color: #d5dbea;
+    background: #1d2238;
+  }
+  td {
+    color: #bcc3d6;
+  }
+  .link-list a {
+    background: var(--white);
+  }
+  .number {
+    color: #e2dcff;
+    background: #2e2560;
+  }
+}
