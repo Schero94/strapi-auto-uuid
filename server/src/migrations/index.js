@@ -5,9 +5,57 @@
  * Uses paginated queries and transactions for safe bulk operations.
  */
 
-import { v4 as uuidv4, validate as validateUuid } from 'uuid';
+import {
+  isUuidFieldValue,
+  resolveUuidFieldOptions,
+} from '../../../shared/uuid-field.js';
+import { withUuidRepairContext } from '../utils/repair-context.js';
 
 const MAX_QUERY_LIMIT = 10000;
+
+/**
+ * Returns normalized field options from the active content-type schema.
+ *
+ * @param {Object} strapi Strapi instance.
+ * @param {string} uid Content type UID.
+ * @param {string} field UUID field name.
+ * @returns {{ version: string, prefix: string, disableAutoGenerate: boolean, allowEdit: boolean }}
+ */
+function getFieldOptions(strapi, uid, field) {
+  const attribute = strapi.contentTypes[uid]?.attributes?.[field];
+  const pluginConfig = strapi.config.get('plugin::field-uuid', {});
+  return resolveUuidFieldOptions(attribute?.options || {}, pluginConfig.defaultVersion || 'v4');
+}
+
+/**
+ * Maps a caught failure to a user-safe field message without exposing database
+ * errors, record identifiers or stored UUID values.
+ *
+ * @param {Error} error Failure from configuration or persistence code.
+ * @returns {string} Actionable message safe for an admin response.
+ */
+function safeFieldFailureMessage(error) {
+  if (error?.code === 'INVALID_UUID_FIELD_CONFIG') {
+    return 'UUID field configuration is invalid. Check its version and prefix.';
+  }
+  return 'Could not scan or update this UUID field. No unverified changes were applied.';
+}
+
+/** Carries safe field context when a batch must abort and roll back. */
+class RepairWriteError extends Error {
+  /**
+   * @param {string} uid Content type UID.
+   * @param {string} field UUID custom-field name.
+   * @param {string} operation Failed operation category.
+   */
+  constructor(uid, field, operation) {
+    super('UUID repair write failed.');
+    this.name = 'RepairWriteError';
+    this.uid = uid;
+    this.field = field;
+    this.operation = operation;
+  }
+}
 
 /**
  * Fetches all entries for a given UID/fields using safe pagination.
@@ -39,13 +87,20 @@ async function fetchAllEntries(strapi, uid, fields, filters) {
 
 const migrations = ({ strapi }) => ({
   /**
-   * Checks migration status across all UUID fields.
-   * @returns {Promise<Object>}
+   * Checks every UUID field against its configured version and prefix. Scan
+   * failures mark the overall report incomplete and block later repairs.
+   * Record identifiers and values are omitted unless an internal repair asks
+   * for them explicitly.
+   *
+   * @param {Object} [options] Internal report options.
+   * @param {boolean} [options.includeRecordDetails=false] Include record values for internal migration logic only.
+   * @returns {Promise<Object>} Counts, safe field messages and optional internal repair details.
    */
-  async checkMigrationStatus() {
+  async checkMigrationStatus({ includeRecordDetails = false } = {}) {
     const { contentTypes } = strapi;
     const report = {
       needsMigration: false,
+      hasErrors: false,
       contentTypes: [],
       totalFields: 0,
       totalEntries: 0,
@@ -67,6 +122,7 @@ const migrations = ({ strapi }) => ({
         };
 
         try {
+          const fieldOptions = getFieldOptions(strapi, uid, attrName);
           const entries = await fetchAllEntries(strapi, uid, ['documentId', attrName]);
 
           fieldInfo.entryCount = entries.length;
@@ -81,13 +137,16 @@ const migrations = ({ strapi }) => ({
 
             if (!uuidValue) {
               emptyCount++;
-            } else if (!validateUuid(uuidValue)) {
+            } else if (!isUuidFieldValue(uuidValue, fieldOptions)) {
               invalidCount++;
-              fieldInfo.issues.push({
+              const issue = {
                 type: 'invalid',
-                documentId: entry.documentId,
-                value: uuidValue,
-              });
+              };
+              if (includeRecordDetails) {
+                issue.documentId = entry.documentId;
+                issue.value = uuidValue;
+              }
+              fieldInfo.issues.push(issue);
             }
 
             if (uuidValue) {
@@ -102,12 +161,15 @@ const migrations = ({ strapi }) => ({
           for (const [uuid, docIds] of duplicates) {
             if (docIds.length > 1) {
               duplicateCount += docIds.length - 1;
-              fieldInfo.issues.push({
+              const issue = {
                 type: 'duplicate',
-                uuid,
                 count: docIds.length,
-                documentIds: docIds,
-              });
+              };
+              if (includeRecordDetails) {
+                issue.uuid = uuid;
+                issue.documentIds = docIds;
+              }
+              fieldInfo.issues.push(issue);
             }
           }
 
@@ -119,8 +181,16 @@ const migrations = ({ strapi }) => ({
             report.needsMigration = true;
           }
         } catch (err) {
-          fieldInfo.error = err.message;
-          report.issues.push(`Failed to check ${uid}.${attrName}: ${err.message}`);
+          fieldInfo.scanFailed = true;
+          fieldInfo.error = safeFieldFailureMessage(err);
+          report.hasErrors = true;
+          report.needsMigration = true;
+          report.issues.push({
+            uid,
+            field: attrName,
+            operation: err?.code === 'INVALID_UUID_FIELD_CONFIG' ? 'configuration' : 'scan',
+            message: fieldInfo.error,
+          });
         }
 
         report.contentTypes.push(fieldInfo);
@@ -132,14 +202,16 @@ const migrations = ({ strapi }) => ({
   },
 
   /**
-   * Runs full migration to fix all UUID issues.
-   * Wrapped in a database transaction for atomicity.
-   * @param {Object} options
-   * @param {boolean} [options.dryRun=true]
-   * @param {boolean} [options.fixEmpty=true]
-   * @param {boolean} [options.fixInvalid=true]
-   * @param {boolean} [options.fixDuplicates=true]
-   * @returns {Promise<Object>}
+   * Runs a full repair only after every field has been scanned successfully.
+   * Real writes use the internal repair context and one transaction. Any
+   * failed write aborts the batch and returns a safe rollback result.
+   *
+   * @param {Object} [options] Repair options.
+   * @param {boolean} [options.dryRun=true] Preview only unless explicitly disabled.
+   * @param {boolean} [options.fixEmpty=true] Generate values for empty fields.
+   * @param {boolean} [options.fixInvalid=true] Replace values that fail field validation.
+   * @param {boolean} [options.fixDuplicates=true] Replace later entries in duplicate groups.
+   * @returns {Promise<Object>} Result counts and errors; the admin controller redacts record-level details.
    */
   async runMigration({
     dryRun = true,
@@ -147,7 +219,7 @@ const migrations = ({ strapi }) => ({
     fixInvalid = true,
     fixDuplicates = true,
   } = {}) {
-    const status = await this.checkMigrationStatus();
+    const status = await this.checkMigrationStatus({ includeRecordDetails: true });
     const result = {
       dryRun,
       startedAt: new Date().toISOString(),
@@ -156,9 +228,27 @@ const migrations = ({ strapi }) => ({
       changes: [],
     };
 
+    if (status.hasErrors) {
+      result.aborted = true;
+      result.errors = status.issues;
+      result.completedAt = new Date().toISOString();
+      result.totalFixed = 0;
+      return result;
+    }
+
+    const generateUniqueValue = async (uid, field, documentId) => {
+      try {
+        return await strapi.plugin('field-uuid').service('service')
+          .generateUniqueFieldValue(uid, field, documentId);
+      } catch {
+        throw new RepairWriteError(uid, field, 'generate');
+      }
+    };
+
     const executeMigration = async () => {
       for (const ctInfo of status.contentTypes) {
         const { uid, field, issues } = ctInfo;
+        const changedDocumentIds = new Set();
 
         if (fixEmpty && ctInfo.emptyCount > 0) {
           try {
@@ -170,7 +260,7 @@ const migrations = ({ strapi }) => ({
             });
 
             for (const entry of emptyEntries) {
-              const newUuid = uuidv4();
+              const newUuid = await generateUniqueValue(uid, field, entry.documentId);
               result.changes.push({
                 type: 'empty_fix',
                 uid,
@@ -179,24 +269,25 @@ const migrations = ({ strapi }) => ({
                 oldValue: null,
                 newValue: newUuid,
               });
+              changedDocumentIds.add(entry.documentId);
 
               if (!dryRun) {
-                await strapi.documents(uid).update({
+                await withUuidRepairContext(() => strapi.documents(uid).update({
                   documentId: entry.documentId,
                   data: { [field]: newUuid },
-                });
+                }));
               }
               result.fixed.empty++;
             }
-          } catch (err) {
-            result.errors.push(`Failed to fix empty UUIDs in ${uid}.${field}: ${err.message}`);
+          } catch {
+            throw new RepairWriteError(uid, field, 'repair');
           }
         }
 
         if (fixInvalid) {
           const invalidIssues = issues.filter((i) => i.type === 'invalid');
           for (const issue of invalidIssues) {
-            const newUuid = uuidv4();
+            const newUuid = await generateUniqueValue(uid, field, issue.documentId);
             result.changes.push({
               type: 'invalid_fix',
               uid,
@@ -205,16 +296,16 @@ const migrations = ({ strapi }) => ({
               oldValue: issue.value,
               newValue: newUuid,
             });
+            changedDocumentIds.add(issue.documentId);
 
             if (!dryRun) {
               try {
-                await strapi.documents(uid).update({
+                await withUuidRepairContext(() => strapi.documents(uid).update({
                   documentId: issue.documentId,
                   data: { [field]: newUuid },
-                });
-              } catch (err) {
-                result.errors.push(`Failed to fix invalid UUID in ${uid}.${field} (${issue.documentId}): ${err.message}`);
-                continue;
+                }));
+              } catch {
+                throw new RepairWriteError(uid, field, 'write');
               }
             }
             result.fixed.invalid++;
@@ -227,7 +318,8 @@ const migrations = ({ strapi }) => ({
             const [, ...fixDocIds] = issue.documentIds;
 
             for (const docId of fixDocIds) {
-              const newUuid = uuidv4();
+              if (changedDocumentIds.has(docId)) continue;
+              const newUuid = await generateUniqueValue(uid, field, docId);
               result.changes.push({
                 type: 'duplicate_fix',
                 uid,
@@ -237,16 +329,16 @@ const migrations = ({ strapi }) => ({
                 newValue: newUuid,
                 keptDocumentId: issue.documentIds[0],
               });
+              changedDocumentIds.add(docId);
 
               if (!dryRun) {
                 try {
-                  await strapi.documents(uid).update({
+                  await withUuidRepairContext(() => strapi.documents(uid).update({
                     documentId: docId,
                     data: { [field]: newUuid },
-                  });
-                } catch (err) {
-                  result.errors.push(`Failed to fix duplicate UUID in ${uid}.${field} (${docId}): ${err.message}`);
-                  continue;
+                  }));
+                } catch {
+                  throw new RepairWriteError(uid, field, 'write');
                 }
               }
               result.fixed.duplicates++;
@@ -256,12 +348,28 @@ const migrations = ({ strapi }) => ({
       }
     };
 
-    if (dryRun) {
-      await executeMigration();
-    } else {
-      await strapi.db.transaction(async () => {
+    try {
+      if (dryRun) {
         await executeMigration();
-      });
+      } else {
+        await withUuidRepairContext(() => strapi.db.transaction(executeMigration));
+      }
+    } catch (error) {
+      result.failed = true;
+      result.rolledBack = !dryRun;
+      result.errors = [{
+        uid: error?.uid,
+        field: error?.field,
+        operation: error?.operation || 'batch',
+        message: dryRun
+          ? 'Repair preview failed. No changes were made.'
+          : 'Repair failed. The transaction was rolled back; no changes were kept.',
+      }];
+      result.changes = [];
+      result.fixed = { empty: 0, invalid: 0, duplicates: 0 };
+      result.totalFixed = 0;
+      result.completedAt = new Date().toISOString();
+      return result;
     }
 
     result.completedAt = new Date().toISOString();
@@ -312,12 +420,14 @@ const migrations = ({ strapi }) => ({
   /**
    * Imports UUID mappings with validation.
    * Only allows writing to api:: content types with actual UUID fields.
-   * Validates that imported values are valid UUIDs.
-   * @param {Object} importData
-   * @param {Object} [options]
-   * @param {boolean} [options.dryRun=true]
-   * @param {boolean} [options.overwrite=false]
-   * @returns {Promise<Object>}
+   * Imported values must match the destination field's UUID version and
+   * prefix, and must not collide with another document.
+   *
+   * @param {Object} importData Export-shaped mapping data.
+   * @param {Object} [options] Import options.
+   * @param {boolean} [options.dryRun=true] Preview only unless explicitly disabled.
+   * @param {boolean} [options.overwrite=false] Replace existing non-empty values.
+   * @returns {Promise<Object>} Counts and safe validation/write errors.
    */
   async importMappings(importData, { dryRun = true, overwrite = false } = {}) {
     const result = {
@@ -329,21 +439,31 @@ const migrations = ({ strapi }) => ({
     };
 
     if (!importData?.mappings) {
-      result.errors.push('Invalid import data: missing mappings');
+      result.errors.push({
+        operation: 'validation',
+        message: 'Invalid import data. A mappings object is required.',
+      });
       return result;
     }
 
     const serviceInstance = strapi.plugin('field-uuid').service('service');
+    const seenValues = new Set();
 
     const executeImport = async () => {
       for (const [uid, ctData] of Object.entries(importData.mappings)) {
         for (const [field, entries] of Object.entries(ctData.fields)) {
           const validation = serviceInstance.validateUuidField(uid, field);
           if (!validation.valid) {
-            result.errors.push(`Skipping ${uid}.${field}: ${validation.error}`);
+            result.errors.push({
+              uid,
+              field,
+              operation: 'validation',
+              message: 'The target UUID field is missing or has invalid configuration.',
+            });
             result.skipped += entries.length;
             continue;
           }
+          const fieldOptions = serviceInstance.getFieldOptions(uid, field);
 
           for (const entry of entries) {
             if (!entry.documentId || !entry.uuid) {
@@ -351,11 +471,29 @@ const migrations = ({ strapi }) => ({
               continue;
             }
 
-            if (!validateUuid(entry.uuid)) {
+            if (!isUuidFieldValue(entry.uuid, fieldOptions)) {
               result.skipped++;
-              result.errors.push(`Invalid UUID format for ${uid} ${entry.documentId}: '${entry.uuid}'`);
+              result.errors.push({
+                uid,
+                field,
+                operation: 'validation',
+                message: "An imported value does not match this field's UUID version and prefix.",
+              });
               continue;
             }
+
+            const identity = `${uid}\u0000${field}\u0000${entry.uuid}`;
+            if (seenValues.has(identity)) {
+              result.skipped++;
+              result.errors.push({
+                uid,
+                field,
+                operation: 'uniqueness',
+                message: 'An imported UUID value is repeated in this file.',
+              });
+              continue;
+            }
+            seenValues.add(identity);
 
             try {
               const existing = await strapi.documents(uid).findFirst({
@@ -365,12 +503,34 @@ const migrations = ({ strapi }) => ({
 
               if (!existing) {
                 result.skipped++;
-                result.errors.push(`Entry not found: ${uid} ${entry.documentId}`);
+                result.errors.push({
+                  uid,
+                  field,
+                  operation: 'lookup',
+                  message: 'A target entry was not found. Its mapping was skipped.',
+                });
                 continue;
               }
 
               if (existing[field] && !overwrite) {
                 result.skipped++;
+                continue;
+              }
+
+              const duplicate = await serviceInstance.checkDuplicate({
+                contentType: uid,
+                field,
+                uuid: entry.uuid,
+                excludeDocumentId: entry.documentId,
+              });
+              if (!duplicate.valid || duplicate.exists) {
+                result.skipped++;
+                result.errors.push({
+                  uid,
+                  field,
+                  operation: 'uniqueness',
+                  message: 'The imported UUID conflicts with another entry or field configuration.',
+                });
                 continue;
               }
 
@@ -383,26 +543,40 @@ const migrations = ({ strapi }) => ({
               });
 
               if (!dryRun) {
-                await strapi.documents(uid).update({
+                await withUuidRepairContext(() => strapi.documents(uid).update({
                   documentId: entry.documentId,
                   data: { [field]: entry.uuid },
-                });
+                }));
               }
               result.imported++;
-            } catch (err) {
-              result.errors.push(`Failed to import ${uid}.${entry.documentId}: ${err.message}`);
+            } catch {
+              throw new RepairWriteError(uid, field, 'import');
             }
           }
         }
       }
     };
 
-    if (dryRun) {
-      await executeImport();
-    } else {
-      await strapi.db.transaction(async () => {
+    try {
+      if (dryRun) {
         await executeImport();
-      });
+      } else {
+        await withUuidRepairContext(() => strapi.db.transaction(executeImport));
+      }
+    } catch (error) {
+      result.failed = true;
+      result.rolledBack = !dryRun;
+      result.imported = 0;
+      result.skipped = 0;
+      result.changes = [];
+      result.errors = [{
+        uid: error?.uid,
+        field: error?.field,
+        operation: error?.operation || 'batch',
+        message: dryRun
+          ? 'Import preview failed. No changes were made.'
+          : 'Import failed. The transaction was rolled back; no changes were kept.',
+      }];
     }
 
     return result;

@@ -7,6 +7,11 @@
 import { PLUGIN_ID } from './pluginId';
 import { Initializer } from './components/Initializer';
 import { PluginIcon } from './components/PluginIcon';
+import * as yup from 'yup';
+import {
+  SUPPORTED_UUID_VERSIONS,
+  UUID_PREFIX_PATTERN,
+} from '../../shared/uuid-field.js';
 
 /**
  * Prefix translation keys with pluginId
@@ -81,8 +86,26 @@ export default {
                   defaultMessage: 'v4 is random, v7 is time-sortable (recommended for new projects)',
                 },
                 options: [
-                  { value: 'v4', label: 'UUID v4 (Random)' },
-                  { value: 'v7', label: 'UUID v7 (Time-sortable)' },
+                  {
+                    key: 'v4',
+                    value: 'v4',
+                    metadatas: {
+                      intlLabel: {
+                        id: `${PLUGIN_ID}.field.options.version.v4`,
+                        defaultMessage: 'UUID v4 (Random)',
+                      },
+                    },
+                  },
+                  {
+                    key: 'v7',
+                    value: 'v7',
+                    metadatas: {
+                      intlLabel: {
+                        id: `${PLUGIN_ID}.field.options.version.v7`,
+                        defaultMessage: 'UUID v7 (Time-sortable)',
+                      },
+                    },
+                  },
                 ],
                 defaultValue: 'v4',
               },
@@ -108,6 +131,19 @@ export default {
               defaultMessage: 'Settings',
             },
             items: [
+              {
+                name: 'unique',
+                type: 'checkbox',
+                intlLabel: {
+                  id: `${PLUGIN_ID}.field.options.unique`,
+                  defaultMessage: 'Unique values',
+                },
+                description: {
+                  id: `${PLUGIN_ID}.field.options.unique.description`,
+                  defaultMessage: 'Add a database constraint to prevent duplicate UUIDs during concurrent writes.',
+                },
+                defaultValue: true,
+              },
               {
                 name: 'private',
                 type: 'checkbox',
@@ -147,7 +183,20 @@ export default {
             ],
           },
         ],
-        validator: () => ({}),
+        /** Returns Yup field schemas for Strapi's Content-Type Builder. */
+        validator: () => ({
+          'uuid-version': yup.string().oneOf(SUPPORTED_UUID_VERSIONS).default('v4'),
+          'uuid-prefix': yup.string()
+            .max(16)
+            .matches(UUID_PREFIX_PATTERN, {
+              excludeEmptyString: true,
+              message: 'UUID prefix must contain 1 to 16 letters, numbers, underscores or hyphens.',
+            })
+            .nullable()
+            .notRequired(),
+          'disable-auto-generate': yup.boolean().notRequired(),
+          'allow-edit': yup.boolean().notRequired(),
+        }),
       },
     });
 

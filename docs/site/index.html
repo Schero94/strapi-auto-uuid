@@ -298,9 +298,11 @@
           <h2>Releases and testing</h2>
           <p class="section-lead">
             The repository uses Conventional Commits and semantic-release on pushes to
-            <code>main</code>. The workflow runs <code>npm ci --legacy-peer-deps</code>, tests, build, and package
-            verification before release. NPM publishing remains enabled and uses the repository's
-            <code>NPM_TOKEN</code> secret.
+            <code>main</code>. The workflow runs the tests, build, and package
+            verification, then publishes to npm with GitHub OIDC. Configure npm
+            Trusted Publishing for <code>Schero94/strapi-auto-uuid</code> and
+            <code>release.yml</code> before the first release. No long-lived
+            npm write token is used.
           </p>
           <p>For local checks, run:</p>
           <div class="code-card">

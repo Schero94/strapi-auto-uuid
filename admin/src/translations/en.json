@@ -12,12 +12,16 @@
   "field.options.uuid": "UUID Options",
   "field.options.version": "UUID Version",
   "field.options.version.description": "v4 is random, v7 is time-sortable (recommended for new projects)",
+  "field.options.version.v4": "UUID v4 (Random)",
+  "field.options.version.v7": "UUID v7 (Time-sortable)",
   "field.options.prefix": "Prefix (optional)",
   "field.options.prefix.description": "Add a prefix to all UUIDs (e.g., 'usr_' for user IDs)",
   "field.options.disableAutoGenerate": "Disable auto-generation",
   "field.options.disableAutoGenerate.description": "Do not auto-generate UUID on create (must be provided manually)",
   "field.options.allowEdit": "Allow manual editing",
   "field.options.allowEdit.description": "Allow users to manually edit the UUID value",
+  "field.options.unique": "Unique values",
+  "field.options.unique.description": "Add a database constraint to prevent duplicate UUIDs during concurrent writes.",
   
   "settings.section": "Auto UUID",
   "settings.management": "UUID Management",
@@ -68,6 +72,9 @@
   "settings.report.result": "Result",
   "settings.report.fixed": "{count} duplicate(s) {action}",
   "settings.report.generated": "{count} UUID(s) {action}",
+  "settings.report.incomplete": "Operation incomplete",
+  "settings.report.imported": "{count} mapping(s) {action}",
+  "settings.diagnose.incomplete": "Diagnosis could not scan every field. Refresh and check field configuration.",
   "settings.modal.autofix.title": "Auto-Fix Duplicate UUIDs",
   "settings.modal.autofix.description": "This will scan all UUID fields and replace duplicate values with new unique UUIDs. The first occurrence of each duplicate will be kept.",
   "settings.modal.generate.title": "Generate Missing UUIDs",
@@ -93,5 +100,9 @@
   "settings.import.success": "{count} UUID(s) imported",
   "settings.error.import": "Failed to import UUID mappings",
   "settings.migration.needed": "Migration Needed",
-  "settings.migration.warning": "Some UUID fields have issues that need to be fixed. Run a migration to resolve them."
+  "settings.migration.warning": "Some UUID fields have issues that need to be fixed. Run a migration to resolve them.",
+  "settings.migration.scanIncomplete": "Scan incomplete",
+  "settings.migration.scanFailed": "One or more UUID fields could not be checked. No repairs ran. Refresh the scan and review the field configuration before retrying.",
+  "settings.migration.statusError": "UUID fields could not be scanned. No repairs were attempted. Refresh and retry.",
+  "settings.status.scanFailed": "Scan incomplete"
 }

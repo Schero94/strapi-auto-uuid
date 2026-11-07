@@ -1,12 +1,12 @@
-import * as uuidLib from 'uuid';
-
-const { v4: uuidv4, validate: validateUuid } = uuidLib;
-const uuidv7 = uuidLib.v7 || uuidv4;
 import { errors } from '@strapi/utils';
+import {
+  generateUuidFieldValue,
+  isUuidFieldValue,
+  resolveUuidFieldOptions,
+} from '../../shared/uuid-field.js';
+import { isUuidRepairContext } from './utils/repair-context.js';
 
 const { ValidationError, ApplicationError } = errors;
-
-const PREFIX_REGEX = /^[a-zA-Z0-9_-]{1,16}$/;
 
 /**
  * Registers RBAC permission actions for the plugin so admin routes can use
@@ -24,7 +24,7 @@ const registerPluginPermissions = async (strapi) => {
   try {
     await strapi.admin?.services?.permission?.actionProvider?.registerMany?.(actions);
   } catch (err) {
-    strapi.log.error('[strapi-auto-uuid] Failed to register plugin permissions:', err.message);
+    strapi.log.error(`[strapi-auto-uuid] Failed to register plugin permissions (${err?.name || 'Error'})`);
   }
 };
 
@@ -53,17 +53,11 @@ const bootstrap = async ({ strapi }) => {
     autoMigrate: pluginConfig.autoMigrate || false,
   };
 
-  await registerPluginPermissions(strapi);
+  // Reject an invalid plugin default before lifecycle hooks can silently
+  // generate values with a different version.
+  resolveUuidFieldOptions({}, config.defaultVersion);
 
-  /**
-   * @param {string} version - 'v4' or 'v7'
-   * @param {string} [prefix] - optional prefix string (validated upstream)
-   * @returns {string}
-   */
-  const generateUuid = (version = config.defaultVersion, prefix = '') => {
-    const raw = version === 'v7' ? uuidv7() : uuidv4();
-    return prefix ? `${prefix}${raw}` : raw;
-  };
+  await registerPluginPermissions(strapi);
 
   const log = {
     debug: (...args) => config.logLevel === 'debug' && strapi.log.debug(...args),
@@ -74,37 +68,24 @@ const bootstrap = async ({ strapi }) => {
 
   /**
    * Reads per-field CTB options. Untrusted prefixes from CTB are validated
-   * against PREFIX_REGEX to prevent smuggling of HTML, SQL, or other
-   * content that could end up in API responses and downstream frontends.
+   * against the shared UUID field rules before use in API values.
+   * Unsupported options reject the write instead of silently using defaults.
+   *
    * @param {Object} attribute - Content type attribute definition
    * @param {string} modelUid - Content type UID (for logging)
    * @param {string} fieldName - Attribute name (for logging)
+   * @returns {{version: string, prefix: string, disableAutoGenerate: boolean, allowEdit: boolean}}
+   * @throws {ValidationError} When the field options are invalid.
    */
   const getFieldOptions = (attribute, modelUid, fieldName) => {
-    const opts = attribute?.options || {};
-    const rawPrefix = opts['uuid-prefix'] || '';
-    let prefix = '';
-    if (rawPrefix) {
-      if (PREFIX_REGEX.test(rawPrefix)) {
-        prefix = rawPrefix;
-      } else {
-        strapi.log.warn(
-          `[strapi-auto-uuid] Invalid prefix "${rawPrefix}" on ${modelUid}.${fieldName} (must match ${PREFIX_REGEX}) – ignored.`
-        );
-      }
+    try {
+      return resolveUuidFieldOptions(attribute?.options || {}, config.defaultVersion);
+    } catch (error) {
+      throw new ValidationError(
+        `Invalid UUID field configuration for '${modelUid}.${fieldName}': ${error.message}`,
+        { field: fieldName }
+      );
     }
-    return {
-      version: opts['uuid-version'] || config.defaultVersion,
-      prefix,
-      disableAutoGenerate: opts['disable-auto-generate'] === true,
-      allowEdit: opts['allow-edit'] === true,
-    };
-  };
-
-  const isValidFieldUuid = (value, prefix) => {
-    if (typeof value !== 'string') return false;
-    const rawUuid = prefix && value.startsWith(prefix) ? value.slice(prefix.length) : value;
-    return validateUuid(rawUuid);
   };
 
   /**
@@ -149,8 +130,14 @@ const bootstrap = async ({ strapi }) => {
   }
 
   /**
-   * Checks if a UUID already exists in the database across BOTH draft and
-   * published rows (uses db.query to bypass the draft-only default scope).
+   * Checks for an identical field value across draft and published database
+   * rows, optionally excluding the document currently being updated.
+   *
+   * @param {string} uid Content type UID.
+   * @param {string} field UUID field name.
+   * @param {string} uuid Complete field value including prefix.
+   * @param {string|null} [excludeDocumentId] Document allowed to retain its value.
+   * @returns {Promise<{exists: boolean, documentId: string|null}>} Duplicate state.
    */
   const checkUuidExists = async (uid, field, uuid, excludeDocumentId = null) => {
     if (!config.validateUniqueness) {
@@ -173,14 +160,36 @@ const bootstrap = async ({ strapi }) => {
     };
   };
 
+  /**
+   * Returns whether a complete field value is already assigned elsewhere.
+   *
+   * @param {string} uid Content type UID.
+   * @param {string} field UUID field name.
+   * @param {string} uuid Complete field value including prefix.
+   * @param {string|null} [excludeDocumentId] Document allowed to retain its value.
+   * @returns {Promise<boolean>} Whether another document has the value.
+   */
   const isUuidExists = async (uid, field, uuid, excludeDocumentId = null) => {
     const result = await checkUuidExists(uid, field, uuid, excludeDocumentId);
     return result.exists;
   };
 
+  /**
+   * Generates a configured UUID and retries collisions found by the database
+   * preflight. The lookup is only a best-effort guard under concurrent writes;
+   * a database unique constraint is required for race-safe uniqueness. When
+   * uniqueness validation is disabled, the candidate is returned unchecked.
+   *
+   * @param {string} uid Content type UID.
+   * @param {string} field UUID field name.
+   * @param {'v4'|'v7'} version Requested UUID version.
+   * @param {string} prefix Configured field prefix.
+   * @returns {Promise<string>} A configured value not found by the preflight lookup.
+   * @throws {ApplicationError} When the retry limit is reached.
+   */
   const generateUniqueUuid = async (uid, field, version, prefix) => {
     for (let attempt = 0; attempt < config.maxRetryAttempts; attempt++) {
-      const newUuid = generateUuid(version, prefix);
+      const newUuid = generateUuidFieldValue({ version, prefix });
 
       if (!config.validateUniqueness) {
         return newUuid;
@@ -202,6 +211,14 @@ const bootstrap = async ({ strapi }) => {
     );
   };
 
+  /**
+   * Resolves a Document Service or database `where` clause to its document ID.
+   * Failure returns null so UUID updates can be rejected by the lifecycle hook.
+   *
+   * @param {string} uid Content type UID.
+   * @param {Object} where Database update selector.
+   * @returns {Promise<string|null>} Resolved document ID, when available.
+   */
   const getDocumentIdFromWhere = async (uid, where) => {
     if (!where) return null;
 
@@ -229,6 +246,11 @@ const bootstrap = async ({ strapi }) => {
   strapi.db.lifecycles.subscribe({
     models: modelsToSubscribe,
 
+    /**
+     * Validates supplied UUIDs or generates missing/invalid values before
+     * create. The existing-row lookup handles ordinary collisions, but the
+     * database unique constraint remains necessary to close concurrent races.
+     */
     async beforeCreate(event) {
       const { model, params } = event;
       const uuidFields = models[model.uid];
@@ -237,13 +259,13 @@ const bootstrap = async ({ strapi }) => {
 
       const currentDocumentId = params.data?.documentId || params.where?.documentId;
 
-      log.debug(`[strapi-auto-uuid] beforeCreate for ${model.uid}, documentId: ${currentDocumentId || 'none'}`);
+      log.debug(`[strapi-auto-uuid] beforeCreate for ${model.uid}`);
 
       for (const { field, attribute } of uuidFields) {
         const fieldOpts = getFieldOptions(attribute, model.uid, field);
         const currentValue = params.data[field];
         const shouldAutoGenerate = config.autoGenerate && !fieldOpts.disableAutoGenerate;
-        const isValidValue = currentValue && isValidFieldUuid(currentValue, fieldOpts.prefix);
+        const isValidValue = currentValue && isUuidFieldValue(currentValue, fieldOpts);
 
         if ((!currentValue || !isValidValue) && shouldAutoGenerate) {
           params.data[field] = await generateUniqueUuid(model.uid, field, fieldOpts.version, fieldOpts.prefix);
@@ -260,7 +282,7 @@ const bootstrap = async ({ strapi }) => {
             currentValue
           );
 
-          log.debug(`[strapi-auto-uuid] UUID check: exists=${exists}, existingDocId=${existingDocumentId}, currentDocId=${currentDocumentId}`);
+          log.debug(`[strapi-auto-uuid] UUID uniqueness check for ${model.uid}.${field}: exists=${exists}`);
 
           if (exists) {
             if (currentDocumentId && existingDocumentId === currentDocumentId) {
@@ -278,29 +300,41 @@ const bootstrap = async ({ strapi }) => {
       }
     },
 
+    /**
+     * Validates UUID updates and preserves immutable values except during an
+     * explicitly scoped internal repair. If the target document cannot be
+     * resolved, the write is rejected rather than bypassing those checks.
+     */
     async beforeUpdate(event) {
       const { model, params } = event;
       const uuidFields = models[model.uid];
 
       if (!uuidFields) return;
 
+      const data = params.data || {};
+      const fieldsBeingUpdated = uuidFields.filter(({ field }) => Object.hasOwn(data, field));
+      if (fieldsBeingUpdated.length === 0) return;
+
       const documentId = await getDocumentIdFromWhere(model.uid, params.where);
-      if (!documentId) return;
+      if (!documentId) {
+        throw new ValidationError(
+          'Unable to verify the target document for a UUID update. The update was rejected.'
+        );
+      }
 
-      for (const { field, attribute } of uuidFields) {
-        if (params.data[field] === undefined) continue;
+      for (const { field, attribute } of fieldsBeingUpdated) {
 
-        const newValue = params.data[field];
+        const newValue = data[field];
         const fieldOpts = getFieldOptions(attribute, model.uid, field);
 
-        if (newValue && !isValidFieldUuid(newValue, fieldOpts.prefix)) {
+        if (newValue !== null && newValue !== '' && !isUuidFieldValue(newValue, fieldOpts)) {
           throw new ValidationError(
             `Invalid UUID format for field '${field}'`,
             { field }
           );
         }
 
-        if (!fieldOpts.allowEdit) {
+        if (!fieldOpts.allowEdit && !isUuidRepairContext()) {
           const currentRecord = await strapi.db.query(model.uid).findOne({
             where: { documentId },
             select: [field],
@@ -356,12 +390,17 @@ const bootstrap = async ({ strapi }) => {
         if (status.needsMigration) {
           strapi.log.warn(`[strapi-auto-uuid] Found ${status.totalFields} field(s) with issues, running auto-fix...`);
           const result = await migrations.runMigration({ dryRun: false });
+          if (!result || result.aborted || result.failed || result.errors?.length > 0) {
+            const migrationState = result?.aborted ? 'aborted' : 'failed';
+            strapi.log.error(`[strapi-auto-uuid] Auto-migration ${migrationState}; changes were not reported as completed.`);
+            return;
+          }
           strapi.log.warn(`[strapi-auto-uuid] Auto-migration completed: ${result.totalFixed} entries fixed`);
         } else {
           log.info('[strapi-auto-uuid] No migration needed, all UUIDs are valid');
         }
       } catch (err) {
-        log.error('[strapi-auto-uuid] Auto-migration failed:', err.message);
+        log.error(`[strapi-auto-uuid] Auto-migration failed (${err?.name || 'Error'})`);
       }
     });
   }

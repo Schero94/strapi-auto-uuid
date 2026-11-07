@@ -1,6 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
-import * as uuidLib from 'uuid';
 import {
   Field,
   Flex,
@@ -8,18 +7,21 @@ import {
   TextInput,
 } from '@strapi/design-system';
 import { ArrowClockwise, Duplicate, Check } from '@strapi/icons';
-
-const { v4: uuidv4, validate: validateUuid } = uuidLib;
-const uuidv7 = uuidLib.v7 || uuidv4;
+import {
+  generateUuidFieldValue,
+  isUuidFieldValue,
+  validateUuidFieldOptions,
+} from '../../../../shared/uuid-field.js';
+import { createUuidInputActions } from './actions.js';
 
 /**
  * UUID Input Component for Strapi v5
  *
  * Respects per-field CTB options:
  * - uuid-version: 'v4' (default) or 'v7'
- * - uuid-prefix: optional prefix string
+ * - uuid-prefix: optional 1-16 character prefix
  * - disable-auto-generate: if true, no auto-generation on mount
- * - allow-edit: if true, field is not read-only
+ * - allow-edit: if true, manual editing and regeneration are available
  */
 const Input = React.forwardRef((props, forwardedRef) => {
   const {
@@ -36,73 +38,81 @@ const Input = React.forwardRef((props, forwardedRef) => {
   } = props;
 
   const { formatMessage } = useIntl();
-  const [invalidUUID, setInvalidUUID] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
 
   const hasGeneratedRef = useRef(false);
-  const previousValueRef = useRef(value);
 
   const fieldOptions = attribute?.options || {};
-  const uuidVersion = fieldOptions['uuid-version'] || 'v4';
-  const uuidPrefix = fieldOptions['uuid-prefix'] || '';
-  const disableAutoGenerate = fieldOptions['disable-auto-generate'] === true;
-  const allowEdit = fieldOptions['allow-edit'] === true;
+  const optionsResult = useMemo(
+    () => validateUuidFieldOptions(fieldOptions),
+    [
+      fieldOptions['uuid-version'],
+      fieldOptions['uuid-prefix'],
+      fieldOptions['disable-auto-generate'],
+      fieldOptions['allow-edit'],
+    ]
+  );
+  const normalizedOptions = optionsResult.valid ? optionsResult.options : null;
+  const disableAutoGenerate = normalizedOptions?.disableAutoGenerate === true;
+  const allowEdit = normalizedOptions?.allowEdit === true;
 
+  /** Creates a value matching the configured version and prefix. */
   const generateNewUuid = useCallback(() => {
-    const raw = uuidVersion === 'v7' ? uuidv7() : uuidv4();
-    return uuidPrefix ? `${uuidPrefix}${raw}` : raw;
-  }, [uuidVersion, uuidPrefix]);
+    if (!normalizedOptions) return '';
+    return generateUuidFieldValue(normalizedOptions);
+  }, [normalizedOptions]);
 
-  const handleChange = useCallback((newValue) => {
-    onChange({ target: { name, type: attribute.type, value: newValue } });
-  }, [onChange, name, attribute.type]);
+  const inputActions = useMemo(
+    () =>
+      createUuidInputActions({
+        allowEdit,
+        options: normalizedOptions,
+        generateValue: generateNewUuid,
+        onChange,
+        name,
+        type: attribute?.type,
+        value,
+      }),
+    [allowEdit, normalizedOptions, generateNewUuid, onChange, name, attribute?.type, value]
+  );
+
+  const handleChange = useCallback(
+    (newValue) => {
+      inputActions.change(newValue);
+    },
+    [inputActions]
+  );
 
   useEffect(() => {
-    if (!value && !hasGeneratedRef.current && !disableAutoGenerate) {
+    if (!value && !hasGeneratedRef.current && !disableAutoGenerate && normalizedOptions) {
       hasGeneratedRef.current = true;
       handleChange(generateNewUuid());
     }
-  }, [value, handleChange, disableAutoGenerate, generateNewUuid]);
-
-  useEffect(() => {
-    if (value !== previousValueRef.current) {
-      previousValueRef.current = value;
-
-      if (value) {
-        const rawUuid = uuidPrefix && value.startsWith(uuidPrefix)
-          ? value.slice(uuidPrefix.length)
-          : value;
-        setInvalidUUID(!validateUuid(rawUuid));
-      } else {
-        setInvalidUUID(false);
-      }
-    }
-  }, [value, uuidPrefix]);
+  }, [value, handleChange, disableAutoGenerate, generateNewUuid, normalizedOptions]);
 
   const handleRefresh = useCallback(() => {
+    if (!inputActions.regenerate()) return;
     setIsGenerating(true);
-    handleChange(generateNewUuid());
-    setInvalidUUID(false);
     setTimeout(() => setIsGenerating(false), 150);
-  }, [handleChange, generateNewUuid]);
+  }, [inputActions]);
 
   const handleCopy = useCallback(async () => {
-    if (!value) return;
+    if (!(await inputActions.copy())) return;
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 2000);
+  }, [inputActions]);
 
-    try {
-      await navigator.clipboard.writeText(value);
-      setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 2000);
-    } catch {
-      /* clipboard API not available in this context */
-    }
-  }, [value]);
-
-  const fieldError = error || (invalidUUID
+  const invalidUUID = Boolean(value && (!normalizedOptions || !isUuidFieldValue(value, normalizedOptions)));
+  const fieldError = error || (!optionsResult.valid
+    ? formatMessage({
+        id: 'field-uuid.form.field.configError',
+        defaultMessage: 'UUID field configuration is invalid. Check its version and prefix.',
+      })
+    : invalidUUID
     ? formatMessage({
         id: 'field-uuid.form.field.error',
-        defaultMessage: 'The UUID format is invalid.',
+        defaultMessage: 'The UUID value does not match this field version and prefix.',
       })
     : null);
 
@@ -164,18 +174,20 @@ const Input = React.forwardRef((props, forwardedRef) => {
             {isCopied ? <Check /> : <Duplicate />}
           </IconButton>
 
-          <IconButton
-            onClick={handleRefresh}
-            disabled={disabled || isGenerating}
-            aria-label={formatMessage({
-              id: 'field-uuid.form.field.generate',
-              defaultMessage: 'Generate new UUID',
-            })}
-            variant="secondary"
-            withTooltip={false}
-          >
-            <ArrowClockwise />
-          </IconButton>
+          {allowEdit && (
+            <IconButton
+              onClick={handleRefresh}
+              disabled={disabled || isGenerating || !normalizedOptions}
+              aria-label={formatMessage({
+                id: 'field-uuid.form.field.generate',
+                defaultMessage: 'Generate new UUID',
+              })}
+              variant="secondary"
+              withTooltip={false}
+            >
+              <ArrowClockwise />
+            </IconButton>
+          )}
         </Flex>
 
         <Field.Hint />

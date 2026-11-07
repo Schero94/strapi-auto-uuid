@@ -10,6 +10,38 @@ import {
 const { ValidationError, ApplicationError } = errors;
 
 const PLUGIN_VERSION = '1.1.0';
+const PRIVATE_REPORT_KEYS = new Set([
+  'documentid',
+  'documentids',
+  'uuid',
+  'olduuid',
+  'newuuid',
+  'oldvalue',
+  'newvalue',
+  'keptdocumentid',
+  'value',
+]);
+
+/**
+ * Removes record identifiers and stored UUID values from administrative
+ * diagnostic and repair reports. The permissioned export endpoint does not
+ * use this helper because its purpose is to export those mappings.
+ *
+ * @param {unknown} value Service report or nested report value.
+ * @returns {unknown} A recursively redacted report.
+ */
+export function sanitizeUuidAdminReport(value) {
+  if (Array.isArray(value)) return value.map(sanitizeUuidAdminReport);
+  if (!value || typeof value !== 'object') return value;
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !PRIVATE_REPORT_KEYS.has(key.toLowerCase()))
+      .map(([key, nested]) => [key, sanitizeUuidAdminReport(nested)])
+  );
+}
+
+const logFailureType = (error) => error?.name || 'Error';
 
 /**
  * UUID Plugin Controller
@@ -59,7 +91,7 @@ const controller = ({ strapi }) => ({
 
       ctx.body = result;
     } catch (error) {
-      strapi.log.error('[strapi-auto-uuid] Error checking duplicate:', error);
+      strapi.log.error(`[strapi-auto-uuid] Duplicate check failed (${logFailureType(error)})`);
       throw new ApplicationError('Failed to check UUID duplicate');
     }
   },
@@ -71,10 +103,10 @@ const controller = ({ strapi }) => ({
   async diagnose(ctx) {
     try {
       const report = await strapi.plugin('field-uuid').service('service').diagnose();
-      ctx.body = report;
+      ctx.body = sanitizeUuidAdminReport(report);
     } catch (error) {
-      strapi.log.error('[strapi-auto-uuid] Error during diagnosis:', error);
-      throw new ApplicationError('Failed to diagnose UUIDs');
+      strapi.log.error(`[strapi-auto-uuid] Diagnosis failed (${logFailureType(error)})`);
+      throw new ApplicationError('Diagnosis failed. Refresh the page and check field configuration before retrying.');
     }
   },
 
@@ -94,10 +126,10 @@ const controller = ({ strapi }) => ({
         strapi.log.warn(`[strapi-auto-uuid] AUDIT autofix by admin:${actor} — fixed=${report.totalFixed}`);
       }
 
-      ctx.body = report;
+      ctx.body = sanitizeUuidAdminReport(report);
     } catch (error) {
-      strapi.log.error('[strapi-auto-uuid] Error during auto-fix:', error);
-      throw new ApplicationError('Failed to auto-fix UUIDs');
+      strapi.log.error(`[strapi-auto-uuid] Auto-fix failed (${logFailureType(error)})`);
+      throw new ApplicationError('Auto-fix failed. No changes were kept. Refresh the scan before retrying.');
     }
   },
 
@@ -117,10 +149,10 @@ const controller = ({ strapi }) => ({
         strapi.log.warn(`[strapi-auto-uuid] AUDIT generate-missing by admin:${actor} — generated=${report.totalGenerated}`);
       }
 
-      ctx.body = report;
+      ctx.body = sanitizeUuidAdminReport(report);
     } catch (error) {
-      strapi.log.error('[strapi-auto-uuid] Error generating missing UUIDs:', error);
-      throw new ApplicationError('Failed to generate missing UUIDs');
+      strapi.log.error(`[strapi-auto-uuid] Missing UUID generation failed (${logFailureType(error)})`);
+      throw new ApplicationError('UUID generation failed. No changes were kept. Refresh the scan before retrying.');
     }
   },
 
@@ -133,7 +165,7 @@ const controller = ({ strapi }) => ({
       const models = strapi.plugin('field-uuid').service('service').getUuidModels();
       ctx.body = { models };
     } catch (error) {
-      strapi.log.error('[strapi-auto-uuid] Error getting models:', error);
+      strapi.log.error(`[strapi-auto-uuid] Model list failed (${logFailureType(error)})`);
       throw new ApplicationError('Failed to get UUID models');
     }
   },
@@ -145,10 +177,10 @@ const controller = ({ strapi }) => ({
   async getMigrationStatus(ctx) {
     try {
       const status = await strapi.plugin('field-uuid').service('migrations').checkMigrationStatus();
-      ctx.body = status;
+      ctx.body = sanitizeUuidAdminReport(status);
     } catch (error) {
-      strapi.log.error('[strapi-auto-uuid] Error checking migration status:', error);
-      throw new ApplicationError('Failed to check migration status');
+      strapi.log.error(`[strapi-auto-uuid] Migration status failed (${logFailureType(error)})`);
+      throw new ApplicationError('Migration status could not be checked. No repairs were attempted. Refresh and retry.');
     }
   },
 
@@ -178,10 +210,10 @@ const controller = ({ strapi }) => ({
         );
       }
 
-      ctx.body = result;
+      ctx.body = sanitizeUuidAdminReport(result);
     } catch (error) {
-      strapi.log.error('[strapi-auto-uuid] Error running migration:', error);
-      throw new ApplicationError('Failed to run migration');
+      strapi.log.error(`[strapi-auto-uuid] Migration failed (${logFailureType(error)})`);
+      throw new ApplicationError('Migration failed. No changes were kept. Refresh the scan and retry.');
     }
   },
 
@@ -199,7 +231,7 @@ const controller = ({ strapi }) => ({
       ctx.set('Content-Disposition', `attachment; filename="uuid-mappings-${Date.now()}.json"`);
       ctx.body = exportData;
     } catch (error) {
-      strapi.log.error('[strapi-auto-uuid] Error exporting mappings:', error);
+      strapi.log.error(`[strapi-auto-uuid] Export failed (${logFailureType(error)})`);
       throw new ApplicationError('Failed to export UUID mappings');
     }
   },
@@ -225,10 +257,10 @@ const controller = ({ strapi }) => ({
         );
       }
 
-      ctx.body = result;
+      ctx.body = sanitizeUuidAdminReport(result);
     } catch (error) {
-      strapi.log.error('[strapi-auto-uuid] Error importing mappings:', error);
-      throw new ApplicationError('Failed to import UUID mappings');
+      strapi.log.error(`[strapi-auto-uuid] Import failed (${logFailureType(error)})`);
+      throw new ApplicationError('Import failed. No changes were kept. Check the mapping and field configuration, then retry.');
     }
   },
 
@@ -251,6 +283,7 @@ const controller = ({ strapi }) => ({
           duplicates: migrationStatus.contentTypes.reduce((sum, ct) => sum + (ct.duplicateCount || 0), 0),
         },
         needsMigration: migrationStatus.needsMigration,
+        hasErrors: migrationStatus.hasErrors,
         models,
         version: PLUGIN_VERSION,
         lastChecked: new Date().toISOString(),
@@ -258,8 +291,8 @@ const controller = ({ strapi }) => ({
 
       ctx.body = stats;
     } catch (error) {
-      strapi.log.error('[strapi-auto-uuid] Error getting stats:', error);
-      throw new ApplicationError('Failed to get UUID statistics');
+      strapi.log.error(`[strapi-auto-uuid] Statistics failed (${logFailureType(error)})`);
+      throw new ApplicationError('UUID statistics could not be loaded. Refresh the page and retry.');
     }
   },
 });

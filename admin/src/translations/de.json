@@ -12,12 +12,16 @@
   "field.options.uuid": "UUID Optionen",
   "field.options.version": "UUID Version",
   "field.options.version.description": "v4 ist zufällig, v7 ist zeitsortierbar (empfohlen für neue Projekte)",
+  "field.options.version.v4": "UUID v4 (Zufällig)",
+  "field.options.version.v7": "UUID v7 (Zeitlich sortierbar)",
   "field.options.prefix": "Präfix (optional)",
   "field.options.prefix.description": "Füge allen UUIDs ein Präfix hinzu (z.B. 'usr_' für Benutzer-IDs)",
   "field.options.disableAutoGenerate": "Auto-Generierung deaktivieren",
   "field.options.disableAutoGenerate.description": "UUID nicht automatisch beim Erstellen generieren (muss manuell angegeben werden)",
   "field.options.allowEdit": "Manuelle Bearbeitung erlauben",
   "field.options.allowEdit.description": "Benutzer können den UUID-Wert manuell bearbeiten",
+  "field.options.unique": "Eindeutige Werte",
+  "field.options.unique.description": "Datenbank-Constraint hinzufügen, damit parallele Schreibvorgänge keine doppelten UUIDs erzeugen.",
   
   "settings.section": "Auto UUID",
   "settings.management": "UUID Verwaltung",
@@ -68,6 +72,9 @@
   "settings.report.result": "Ergebnis",
   "settings.report.fixed": "{count} Duplikat(e) {action}",
   "settings.report.generated": "{count} UUID(s) {action}",
+  "settings.report.incomplete": "Vorgang unvollständig",
+  "settings.report.imported": "{count} Zuordnung(en) {action}",
+  "settings.diagnose.incomplete": "Nicht alle Felder konnten geprüft werden. Aktualisiere die Ansicht und prüfe die Feldkonfiguration.",
   "settings.modal.autofix.title": "Doppelte UUIDs automatisch beheben",
   "settings.modal.autofix.description": "Dies scannt alle UUID-Felder und ersetzt doppelte Werte durch neue eindeutige UUIDs. Das erste Vorkommen jedes Duplikats wird beibehalten.",
   "settings.modal.generate.title": "Fehlende UUIDs generieren",
@@ -93,5 +100,9 @@
   "settings.import.success": "{count} UUID(s) importiert",
   "settings.error.import": "Import der UUID-Zuordnungen fehlgeschlagen",
   "settings.migration.needed": "Migration erforderlich",
-  "settings.migration.warning": "Einige UUID-Felder haben Probleme, die behoben werden müssen. Führe eine Migration durch, um sie zu beheben."
+  "settings.migration.warning": "Einige UUID-Felder haben Probleme, die behoben werden müssen. Führe eine Migration durch, um sie zu beheben.",
+  "settings.migration.scanIncomplete": "Prüfung unvollständig",
+  "settings.migration.scanFailed": "Mindestens ein UUID-Feld konnte nicht geprüft werden. Es wurden keine Reparaturen ausgeführt. Aktualisiere die Prüfung und kontrolliere die Feldkonfiguration.",
+  "settings.migration.statusError": "UUID-Felder konnten nicht geprüft werden. Es wurden keine Reparaturen versucht. Aktualisiere die Ansicht und versuche es erneut.",
+  "settings.status.scanFailed": "Prüfung unvollständig"
 }

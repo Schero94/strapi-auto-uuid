@@ -31,6 +31,19 @@ import {
 } from '@strapi/icons';
 import { PLUGIN_ID } from '../pluginId';
 
+/**
+ * Reads only the server's deliberately safe error envelope. Browser-side
+ * transport details can contain database metadata and are not shown.
+ *
+ * @param {unknown} error Request error.
+ * @param {string} fallback Localized fallback message.
+ * @returns {string} A short, privacy-safe message for the page.
+ */
+const getSafeActionError = (error, fallback) => {
+  const message = error?.response?.data?.error?.message;
+  return typeof message === 'string' && message.length <= 240 ? message : fallback;
+};
+
 // Animations
 const fadeIn = keyframes`
   from { opacity: 0; transform: translateY(10px); }
@@ -321,7 +334,7 @@ const SettingsPage = () => {
       const response = await get(`/${PLUGIN_ID}/models`);
       setModels(response.data?.models || {});
     } catch {
-      // silently handled
+      setError('Could not load UUID fields. Check your permission and refresh the page.');
     }
   }, [get]);
 
@@ -345,8 +358,14 @@ const SettingsPage = () => {
     try {
       const response = await get(`/${PLUGIN_ID}/migration/status`);
       setMigrationStatus(response.data);
+      if (!response.data?.hasErrors) setError(null);
     } catch {
-      // silently handled
+      setMigrationStatus({
+        needsMigration: true,
+        hasErrors: true,
+        issues: [{ message: 'UUID fields could not be scanned. No repairs were attempted. Refresh and retry.' }],
+      });
+      setError('UUID fields could not be scanned. No repairs were attempted. Refresh and retry.');
     }
   }, [get]);
 
@@ -359,15 +378,22 @@ const SettingsPage = () => {
     try {
       const response = await get(`/${PLUGIN_ID}/diagnose`);
       setDiagnoseReport(response.data);
-      toggleNotification({
-        type: 'success',
-        message: t('settings.diagnose.success', 'Diagnosis completed successfully'),
-      });
+      if (response.data?.hasErrors) {
+        const message = response.data.issues?.[0]?.message || t('settings.diagnose.incomplete', 'Diagnosis could not scan every field. Refresh and check field configuration.');
+        setError(message);
+        toggleNotification({ type: 'danger', message });
+      } else {
+        toggleNotification({
+          type: 'success',
+          message: t('settings.diagnose.success', 'Diagnosis completed successfully'),
+        });
+      }
     } catch (err) {
-      setError(t('settings.error.diagnose', 'Failed to run diagnosis'));
+      const message = getSafeActionError(err, t('settings.error.diagnose', 'Failed to run diagnosis'));
+      setError(message);
       toggleNotification({
         type: 'danger',
-        message: t('settings.error.diagnose', 'Failed to run diagnosis'),
+        message,
       });
     } finally {
       setIsLoading(false);
@@ -392,10 +418,11 @@ const SettingsPage = () => {
         await runDiagnose();
       }
     } catch (err) {
-      setError(t('settings.error.autofix', 'Failed to run auto-fix'));
+      const message = getSafeActionError(err, t('settings.error.autofix', 'Failed to run auto-fix'));
+      setError(message);
       toggleNotification({
         type: 'danger',
-        message: t('settings.error.autofix', 'Failed to run auto-fix'),
+        message,
       });
     } finally {
       setIsLoading(false);
@@ -420,10 +447,11 @@ const SettingsPage = () => {
         });
       }
     } catch (err) {
-      setError(t('settings.error.generate', 'Failed to generate missing UUIDs'));
+      const message = getSafeActionError(err, t('settings.error.generate', 'Failed to generate missing UUIDs'));
+      setError(message);
       toggleNotification({
         type: 'danger',
-        message: t('settings.error.generate', 'Failed to generate missing UUIDs'),
+        message,
       });
     } finally {
       setIsLoading(false);
@@ -443,6 +471,14 @@ const SettingsPage = () => {
         ...migrationOptions,
       });
       setFixReport(response.data);
+
+      if (response.data?.failed || response.data?.aborted || response.data?.errors?.length) {
+        const message = response.data.errors?.[0]?.message
+          || t('settings.migration.statusError', 'UUID fields could not be scanned. No repairs were attempted. Refresh and retry.');
+        setError(message);
+        toggleNotification({ type: 'danger', message });
+        return;
+      }
       
       if (!dryRun && response.data.totalFixed > 0) {
         toggleNotification({
@@ -453,10 +489,11 @@ const SettingsPage = () => {
         await fetchMigrationStatus();
       }
     } catch (err) {
-      setError(t('settings.error.migration', 'Failed to run migration'));
+      const message = getSafeActionError(err, t('settings.error.migration', 'Failed to run migration'));
+      setError(message);
       toggleNotification({
         type: 'danger',
-        message: t('settings.error.migration', 'Failed to run migration'),
+        message,
       });
     } finally {
       setIsLoading(false);
@@ -529,10 +566,11 @@ const SettingsPage = () => {
         await fetchStats();
       }
     } catch (err) {
-      setError(t('settings.error.import', 'Failed to import UUID mappings'));
+      const message = getSafeActionError(err, err.message || t('settings.error.import', 'Failed to import UUID mappings'));
+      setError(message);
       toggleNotification({
         type: 'danger',
-        message: err.message || t('settings.error.import', 'Failed to import UUID mappings'),
+        message,
       });
     } finally {
       setIsLoading(false);
@@ -551,7 +589,8 @@ const SettingsPage = () => {
   const emptyCount = stats?.issues?.empty ?? null;
   const invalidCount = stats?.issues?.invalid ?? null;
   const totalEntries = stats?.totalEntries ?? null;
-  const needsMigration = stats?.needsMigration ?? migrationStatus?.needsMigration ?? false;
+  const scanHasErrors = Boolean(stats?.hasErrors || migrationStatus?.hasErrors);
+  const needsMigration = Boolean(stats?.needsMigration || migrationStatus?.needsMigration || scanHasErrors);
 
   if (isLoading && !diagnoseReport) {
     return (
@@ -579,6 +618,7 @@ const SettingsPage = () => {
           <Button
             startIcon={<ArrowClockwise />}
             onClick={() => { 
+              setError(null);
               fetchStats(); 
               fetchMigrationStatus();
               setDiagnoseReport(null); 
@@ -661,14 +701,33 @@ const SettingsPage = () => {
           <Box marginBottom={6}>
             <Alert 
               variant="warning" 
-              title={t('settings.migration.needed', 'Migration Needed')}
+              title={scanHasErrors
+                ? t('settings.migration.scanIncomplete', 'Scan incomplete')
+                : t('settings.migration.needed', 'Migration Needed')}
               action={
-                <Button variant="default" size="S" onClick={() => setShowMigrationModal(true)}>
-                  {t('settings.actions.migration', 'Run Migration')}
+                <Button
+                  variant="default"
+                  size="S"
+                  onClick={scanHasErrors ? () => {
+                    fetchStats();
+                    fetchMigrationStatus();
+                  } : () => setShowMigrationModal(true)}
+                  disabled={isLoading}
+                >
+                  {scanHasErrors
+                    ? t('settings.refresh', 'Refresh')
+                    : t('settings.actions.migration', 'Run Migration')}
                 </Button>
               }
             >
-              {t('settings.migration.warning', 'Some UUID fields have issues that need to be fixed. Run a migration to resolve them.')}
+              {scanHasErrors
+                ? t('settings.migration.scanFailed', 'One or more UUID fields could not be checked. No repairs ran. Refresh the scan and review the field configuration before retrying.')
+                : t('settings.migration.warning', 'Some UUID fields have issues that need to be fixed. Run a migration to resolve them.')}
+              {scanHasErrors && migrationStatus?.issues?.map((issue, index) => (
+                <Typography key={`${issue.operation || 'scan'}-${index}`} variant="pi" display="block" marginTop={2}>
+                  {issue.message}
+                </Typography>
+              ))}
             </Alert>
           </Box>
         )}
@@ -790,8 +849,10 @@ const SettingsPage = () => {
         {fixReport && (
           <Box marginBottom={6}>
             <Alert 
-              variant={fixReport.dryRun ? 'default' : 'success'}
-              title={fixReport.dryRun ? t('settings.report.dryrun', 'Preview (Dry Run)') : t('settings.report.result', 'Result')}
+              variant={fixReport.failed || fixReport.aborted || fixReport.errors?.length ? 'danger' : fixReport.dryRun ? 'default' : 'success'}
+              title={fixReport.failed || fixReport.aborted
+                ? t('settings.report.incomplete', 'Operation incomplete')
+                : fixReport.dryRun ? t('settings.report.dryrun', 'Preview (Dry Run)') : t('settings.report.result', 'Result')}
               closeLabel="Close"
               onClose={() => setFixReport(null)}
             >
@@ -811,6 +872,19 @@ const SettingsPage = () => {
                   })}
                 </Typography>
               )}
+              {fixReport.imported !== undefined && (
+                <Typography>
+                  {t('settings.report.imported', '{count} mapping(s) {action}', {
+                    count: fixReport.imported,
+                    action: fixReport.dryRun ? 'would be imported' : 'imported',
+                  })}
+                </Typography>
+              )}
+              {fixReport.errors?.map((item, index) => (
+                <Typography key={`report-error-${index}`} display="block" marginTop={2}>
+                  {typeof item === 'string' ? item : item.message}
+                </Typography>
+              ))}
             </Alert>
           </Box>
         )}
@@ -834,7 +908,9 @@ const SettingsPage = () => {
                   <Box padding={4}>
                     {Object.entries(models).map(([uid, fields]) => {
                       const duplicateInfo = diagnoseReport?.details?.[uid];
-                      const hasDuplicates = duplicateInfo && Object.values(duplicateInfo.fields).some(
+                      const fieldReports = Object.values(duplicateInfo?.fields || {});
+                      const hasFieldScanFailure = fieldReports.some((report) => report.scanFailed);
+                      const hasDuplicates = duplicateInfo && fieldReports.some(
                         f => f.duplicateGroups > 0
                       );
                       
@@ -851,7 +927,12 @@ const SettingsPage = () => {
                             </Flex>
                           </Box>
                           {diagnoseReport ? (
-                            hasDuplicates ? (
+                            hasFieldScanFailure ? (
+                              <StatusBadge style={{ background: '#FEF3C7', color: '#92400E' }}>
+                                <WarningCircle style={{ width: 16, height: 16 }} />
+                                {t('settings.status.scanFailed', 'Scan incomplete')}
+                              </StatusBadge>
+                            ) : hasDuplicates ? (
                               <StatusBadge style={{ background: '#FEE2E2', color: '#DC2626' }}>
                                 <WarningCircle style={{ width: 16, height: 16 }} />
                                 {t('settings.status.duplicates', 'Has Duplicates')}
@@ -924,6 +1005,7 @@ const SettingsPage = () => {
               <Button 
                 onClick={runAutoFix} 
                 loading={isLoading}
+                disabled={scanHasErrors}
                 variant={dryRun ? 'secondary' : 'danger'}
               >
                 {dryRun 
@@ -974,6 +1056,7 @@ const SettingsPage = () => {
               <Button 
                 onClick={runGenerateMissing} 
                 loading={isLoading}
+                disabled={scanHasErrors}
                 variant={dryRun ? 'secondary' : 'success'}
               >
                 {dryRun 
@@ -1050,6 +1133,7 @@ const SettingsPage = () => {
               <Button 
                 onClick={runMigration} 
                 loading={isLoading}
+                disabled={scanHasErrors}
                 variant={dryRun ? 'secondary' : 'danger'}
               >
                 {dryRun 
@@ -1120,8 +1204,8 @@ const SettingsPage = () => {
               <Button 
                 onClick={importMappings} 
                 loading={isLoading}
+                disabled={!importData.trim() || scanHasErrors}
                 variant={dryRun ? 'secondary' : 'success'}
-                disabled={!importData.trim()}
               >
                 {dryRun 
                   ? t('settings.modal.preview', 'Preview Changes')

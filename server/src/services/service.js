@@ -1,7 +1,13 @@
 import * as uuidLib from 'uuid';
+import {
+  generateUuidFieldValue,
+  isUuidFieldValue,
+  isUuidOfVersion,
+  resolveUuidFieldOptions,
+} from '../../../shared/uuid-field.js';
+import { withUuidRepairContext } from '../utils/repair-context.js';
 
-const { v4: uuidv4, validate: validateUuid } = uuidLib;
-const uuidv7 = uuidLib.v7 || uuidv4;
+const { validate: validateUuid } = uuidLib;
 
 const MAX_QUERY_LIMIT = 10000;
 
@@ -14,18 +20,22 @@ const MAX_QUERY_LIMIT = 10000;
 const service = ({ strapi }) => ({
   /**
    * Generates a UUID respecting the plugin's configured default version.
-   * @param {string} [version] - Override version ('v4' or 'v7')
-   * @returns {string}
+   * @param {'v4'|'v7'} [version] Version override; invalid values are rejected.
+   * @returns {string} UUID in the configured version.
+   * @throws {TypeError} When the requested or configured version is unsupported.
    */
   generate(version) {
     const pluginConfig = strapi.config.get('plugin::field-uuid', {});
-    const v = version || pluginConfig.defaultVersion || 'v4';
-    return v === 'v7' ? uuidv7() : uuidv4();
+    const resolvedVersion = resolveUuidFieldOptions(
+      version ? { 'uuid-version': version } : {},
+      pluginConfig.defaultVersion || 'v4'
+    ).version;
+    return generateUuidFieldValue({ version: resolvedVersion, prefix: '' });
   },
 
   /**
-   * @param {string} uuid
-   * @returns {boolean}
+   * @param {unknown} uuid Candidate UUID value.
+   * @returns {boolean} Whether the value has valid UUID syntax.
    */
   validate(uuid) {
     return validateUuid(uuid);
@@ -33,9 +43,9 @@ const service = ({ strapi }) => ({
 
   /**
    * Returns the value if it's a valid UUID, otherwise generates a new one.
-   * @param {string} value
-   * @param {string} [version]
-   * @returns {string}
+   * @param {unknown} value Candidate UUID value.
+   * @param {'v4'|'v7'} [version] Version to use only when a replacement is needed.
+   * @returns {string} The original value when valid or a new UUID when invalid.
    */
   ensureUuid(value, version) {
     if (!value || !validateUuid(value)) {
@@ -46,15 +56,19 @@ const service = ({ strapi }) => ({
 
   /**
    * Checks if a UUID already exists in a content type.
-   * @param {Object} params
-   * @param {string} params.contentType - Must be an api:: content type with UUID field
-   * @param {string} params.field
-   * @param {string} params.uuid
-   * @param {string} [params.excludeDocumentId]
-   * @returns {Promise<{exists: boolean, valid: boolean}>}
+   * @param {Object} params Duplicate lookup options.
+   * @param {string} params.contentType API content type UID with a UUID field.
+   * @param {string} params.field UUID custom-field name.
+   * @param {string} params.uuid Candidate field value, including its prefix.
+   * @param {string} [params.excludeDocumentId] Current document to ignore.
+   * @returns {Promise<{exists: boolean, valid: boolean}>} Lookup result.
    */
   async checkDuplicate({ contentType, field, uuid, excludeDocumentId }) {
-    const isValid = validateUuid(uuid);
+    const validation = this.validateUuidField(contentType, field);
+    if (!validation.valid) return { exists: false, valid: false };
+
+    const fieldOptions = this.getFieldOptions(contentType, field);
+    const isValid = isUuidFieldValue(uuid, fieldOptions);
 
     if (!isValid) {
       return { exists: false, valid: false };
@@ -124,7 +138,59 @@ const service = ({ strapi }) => ({
       return { valid: false, error: `Field '${field}' is not a UUID custom field` };
     }
 
+    try {
+      this.getFieldOptions(uid, field);
+    } catch {
+      return { valid: false, error: 'UUID field configuration is invalid' };
+    }
+
     return { valid: true };
+  },
+
+  /**
+   * Resolves a UUID custom field's version, prefix and editing options from
+   * the registered content-type schema.
+   *
+   * @param {string} uid Content type UID.
+   * @param {string} field UUID field name.
+   * @returns {{ version: string, prefix: string, disableAutoGenerate: boolean, allowEdit: boolean }}
+   * @throws {TypeError} If the field configuration is malformed.
+   */
+  getFieldOptions(uid, field) {
+    const attribute = strapi.contentTypes[uid]?.attributes?.[field];
+    const pluginConfig = strapi.config.get('plugin::field-uuid', {});
+    return resolveUuidFieldOptions(attribute?.options || {}, pluginConfig.defaultVersion || 'v4');
+  },
+
+  /**
+   * Generates a collision-free value using the target field's version and
+   * prefix. The current document is excluded when checking uniqueness.
+   *
+   * @param {string} uid Content type UID.
+   * @param {string} field UUID field name.
+   * @param {string} [excludeDocumentId] Document receiving the replacement.
+   * @returns {Promise<string>} A unique, correctly configured field value.
+   * @throws {Error} If the field is invalid or all collision retries fail.
+   */
+  async generateUniqueFieldValue(uid, field, excludeDocumentId) {
+    const fieldOptions = this.getFieldOptions(uid, field);
+    const pluginConfig = strapi.config.get('plugin::field-uuid', {});
+    const maxAttempts = Number.isInteger(pluginConfig.maxRetryAttempts)
+      ? Math.max(1, pluginConfig.maxRetryAttempts)
+      : 3;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const value = generateUuidFieldValue(fieldOptions);
+      const duplicate = await this.checkDuplicate({
+        contentType: uid,
+        field,
+        uuid: value,
+        excludeDocumentId,
+      });
+      if (duplicate.valid && !duplicate.exists) return value;
+    }
+
+    throw new Error(`Failed to generate a unique UUID for ${uid}.${field}.`);
   },
 
   /**
@@ -156,8 +222,11 @@ const service = ({ strapi }) => ({
   },
 
   /**
-   * Diagnoses all UUID fields for duplicates across all content types.
-   * @returns {Promise<Object>}
+   * Scans each registered UUID field for invalid values and duplicate groups.
+   * A field whose configuration or database scan fails is marked as incomplete
+   * instead of being reported as clean.
+   *
+   * @returns {Promise<Object>} Counts and per-field diagnosis results.
    */
   async diagnose() {
     const models = this.getUuidModels();
@@ -167,18 +236,52 @@ const service = ({ strapi }) => ({
       details: {},
     };
 
+    report.hasErrors = false;
+    report.issues = [];
+
     for (const [uid, fields] of Object.entries(models)) {
       report.scannedModels++;
       report.details[uid] = { fields: {} };
 
       for (const field of fields) {
-        const duplicates = await this.findDuplicatesForField(uid, field);
-        report.details[uid].fields[field] = {
-          duplicateGroups: duplicates.length,
-          affectedEntries: duplicates.reduce((sum, group) => sum + group.count, 0),
-          duplicates,
-        };
-        report.totalDuplicates += duplicates.reduce((sum, group) => sum + group.count - 1, 0);
+        try {
+          const options = this.getFieldOptions(uid, field);
+          const entries = await this.fetchAllEntries(uid, ['documentId', field]);
+          const groups = new Map();
+          let invalidCount = 0;
+
+          for (const entry of entries) {
+            const value = entry[field];
+            if (!value) continue;
+            if (!isUuidFieldValue(value, options)) invalidCount += 1;
+            const documentIds = groups.get(value) || [];
+            documentIds.push(entry.documentId);
+            groups.set(value, documentIds);
+          }
+
+          const duplicates = [...groups.entries()]
+            .filter(([, documentIds]) => documentIds.length > 1)
+            .map(([value, documentIds]) => ({ uuid: value, count: documentIds.length, documentIds }));
+          const duplicateCount = duplicates.reduce((sum, group) => sum + group.count - 1, 0);
+
+          report.details[uid].fields[field] = {
+            invalidCount,
+            duplicateGroups: duplicates.length,
+            affectedEntries: duplicates.reduce((sum, group) => sum + group.count, 0),
+            duplicates,
+          };
+          report.totalDuplicates += duplicateCount;
+        } catch (error) {
+          report.hasErrors = true;
+          report.issues.push({
+            uid,
+            field,
+            message: error?.code === 'INVALID_UUID_FIELD_CONFIG'
+              ? 'UUID field configuration is invalid. Check its version and prefix.'
+              : 'Could not scan this UUID field. No repairs were attempted.',
+          });
+          report.details[uid].fields[field] = { invalidCount: 0, duplicateGroups: 0, affectedEntries: 0, scanFailed: true };
+        }
       }
     }
 
@@ -186,27 +289,28 @@ const service = ({ strapi }) => ({
   },
 
   /**
-   * Finds duplicate UUIDs for a specific content type and field.
-   * @param {string} uid
-   * @param {string} field
-   * @returns {Promise<Array>}
+   * Finds repeated non-empty values for one UUID field. A Map is used because
+   * stored legacy values are untrusted and may resemble object property names.
+   *
+   * @param {string} uid Content type UID.
+   * @param {string} field UUID custom-field name.
+   * @returns {Promise<Array<{uuid: string, count: number, documentIds: string[]}>>} Duplicate groups.
    */
   async findDuplicatesForField(uid, field) {
     const entries = await this.fetchAllEntries(uid, ['documentId', field]);
 
-    const uuidGroups = {};
+    const uuidGroups = new Map();
     for (const entry of entries) {
       const uuidValue = entry[field];
       if (!uuidValue) continue;
 
-      if (!uuidGroups[uuidValue]) {
-        uuidGroups[uuidValue] = [];
-      }
-      uuidGroups[uuidValue].push(entry.documentId);
+      const documentIds = uuidGroups.get(uuidValue) || [];
+      documentIds.push(entry.documentId);
+      uuidGroups.set(uuidValue, documentIds);
     }
 
     const duplicates = [];
-    for (const [uuid, documentIds] of Object.entries(uuidGroups)) {
+    for (const [uuid, documentIds] of uuidGroups.entries()) {
       if (documentIds.length > 1) {
         duplicates.push({ uuid, count: documentIds.length, documentIds });
       }
@@ -217,13 +321,18 @@ const service = ({ strapi }) => ({
 
   /**
    * Auto-fixes all duplicate UUIDs by generating new unique ones.
-   * Wrapped in a database transaction for atomicity.
-   * @param {Object} [options]
-   * @param {boolean} [options.dryRun=false]
-   * @returns {Promise<Object>}
+   * Writes run in one transaction. Every field's options are validated before
+   * any write begins, and omitted options produce a read-only preview.
+   *
+   * @param {Object} [options] Repair options.
+   * @param {boolean} [options.dryRun=true] Preview only unless a caller explicitly opts into writes.
+   * @returns {Promise<Object>} Per-field duplicate counts and proposed changes.
    */
-  async autofix({ dryRun = false } = {}) {
+  async autofix({ dryRun = true } = {}) {
     const models = this.getUuidModels();
+    for (const [uid, fields] of Object.entries(models)) {
+      for (const field of fields) this.getFieldOptions(uid, field);
+    }
     const report = {
       dryRun,
       fixedModels: 0,
@@ -267,12 +376,14 @@ const service = ({ strapi }) => ({
 
   /**
    * Fixes duplicate UUIDs for a specific content type and field.
-   * @param {string} uid
-   * @param {string} field
-   * @param {boolean} dryRun
-   * @returns {Promise<Object>}
+   * Replacement values follow the field's configured version and prefix.
+   *
+   * @param {string} uid Content type UID.
+   * @param {string} field UUID custom-field name.
+   * @param {boolean} [dryRun=true] Preview changes unless writes are explicitly enabled.
+   * @returns {Promise<Object>} Counts and proposed field replacements.
    */
-  async fixDuplicatesForField(uid, field, dryRun) {
+  async fixDuplicatesForField(uid, field, dryRun = true) {
     const duplicates = await this.findDuplicatesForField(uid, field);
     const fixes = {
       found: duplicates.length,
@@ -284,7 +395,7 @@ const service = ({ strapi }) => ({
       const [keepDocumentId, ...duplicateDocumentIds] = group.documentIds;
 
       for (const documentId of duplicateDocumentIds) {
-        const newUuid = this.generate();
+        const newUuid = await this.generateUniqueFieldValue(uid, field, documentId);
 
         fixes.changes.push({
           documentId,
@@ -294,11 +405,11 @@ const service = ({ strapi }) => ({
         });
 
         if (!dryRun) {
-          await strapi.documents(uid).update({
+          await withUuidRepairContext(() => strapi.documents(uid).update({
             documentId,
             data: { [field]: newUuid },
-          });
-          strapi.log.info(`[strapi-auto-uuid] Fixed duplicate UUID in ${uid}: ${documentId} -> ${newUuid}`);
+          }));
+          strapi.log.info(`[strapi-auto-uuid] Fixed duplicate UUID in ${uid}.${field}`);
         }
 
         fixes.fixed++;
@@ -310,13 +421,18 @@ const service = ({ strapi }) => ({
 
   /**
    * Generates missing UUIDs for entries with empty UUID fields.
-   * Wrapped in a database transaction for atomicity.
-   * @param {Object} [options]
-   * @param {boolean} [options.dryRun=false]
-   * @returns {Promise<Object>}
+   * Values use the configured field version and prefix. Writes run in one
+   * transaction, and an omitted option produces a read-only preview.
+   *
+   * @param {Object} [options] Repair options.
+   * @param {boolean} [options.dryRun=true] Preview only unless a caller explicitly opts into writes.
+   * @returns {Promise<Object>} Counts and proposed field values.
    */
-  async generateMissing({ dryRun = false } = {}) {
+  async generateMissing({ dryRun = true } = {}) {
     const models = this.getUuidModels();
+    for (const [uid, fields] of Object.entries(models)) {
+      for (const field of fields) this.getFieldOptions(uid, field);
+    }
     const report = {
       dryRun,
       totalGenerated: 0,
@@ -336,15 +452,15 @@ const service = ({ strapi }) => ({
 
         const generated = [];
         for (const entry of entries) {
-          const newUuid = this.generate();
+          const newUuid = await this.generateUniqueFieldValue(uid, field, entry.documentId);
           generated.push({ documentId: entry.documentId, newUuid });
 
           if (!dryRun) {
-            await strapi.documents(uid).update({
+            await withUuidRepairContext(() => strapi.documents(uid).update({
               documentId: entry.documentId,
               data: { [field]: newUuid },
-            });
-            strapi.log.info(`[strapi-auto-uuid] Generated missing UUID for ${uid}: ${entry.documentId} -> ${newUuid}`);
+            }));
+            strapi.log.info(`[strapi-auto-uuid] Generated missing UUID for ${uid}.${field}`);
           }
         }
 

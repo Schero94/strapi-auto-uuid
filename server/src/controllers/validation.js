@@ -24,7 +24,8 @@ export const checkDuplicateSchema = z.object({
 
 export const dryRunOnlySchema = z
   .object({
-    dryRun: z.boolean().optional().default(false),
+    // Mutations must require an explicit `{ dryRun: false }` opt-in.
+    dryRun: z.boolean().optional().default(true),
   })
   .strict();
 

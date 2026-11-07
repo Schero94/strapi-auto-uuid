@@ -44,7 +44,8 @@
   },
   "dependencies": {
     "uuid": "^14.0.3",
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "yup": "0.32.9"
   },
   "devDependencies": {
     "@semantic-release/changelog": "^7.0.0",

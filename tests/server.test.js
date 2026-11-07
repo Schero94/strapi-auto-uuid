@@ -4,6 +4,7 @@ import register from '../server/src/register.js';
 import adminRoutes from '../server/src/routes/admin-api.js';
 import contentApiRoutes from '../server/src/routes/content-api.js';
 import serviceFactory from '../server/src/services/service.js';
+import pluginConfig from '../server/src/config/index.js';
 
 vi.mock('uuid', async (importOriginal) => {
   const actual = await importOriginal();
@@ -82,6 +83,21 @@ describe('UUID generation service', () => {
     expect(uuid.validate(service.ensureUuid('not-a-uuid'))).toBe(true);
     expect(service.ensureUuid('not-a-uuid')[14]).toBe('7');
   });
+
+  it('retries field-specific UUID collisions and keeps the configured prefix', async () => {
+    const first = uuid.v7();
+    const second = uuid.v7();
+    vi.mocked(uuid.v7).mockClear();
+    const generator = vi.mocked(uuid.v7).mockReturnValueOnce(first).mockReturnValueOnce(second);
+    const { strapi } = makeStrapi({
+      attributes: { [field]: uuidAttribute({ 'uuid-version': 'v7', 'uuid-prefix': 'art_' }) },
+      existing: (where) => (where[field] === `art_${first}` ? { documentId: 'doc-existing' } : null),
+    });
+    const service = serviceFactory({ strapi });
+
+    await expect(service.generateUniqueFieldValue(uid, field)).resolves.toBe(`art_${second}`);
+    expect(generator).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('custom field registration', () => {
@@ -98,6 +114,14 @@ describe('custom field registration', () => {
         inputSize: { default: 12, isResizable: true },
       })
     );
+  });
+});
+
+describe('plugin configuration', () => {
+  it('rejects unsupported default UUID versions and unsafe retry counts', () => {
+    expect(() => pluginConfig.validator({ defaultVersion: 'v1' })).toThrow(/defaultVersion/);
+    expect(() => pluginConfig.validator({ maxRetryAttempts: 0 })).toThrow(/maxRetryAttempts/);
+    expect(() => pluginConfig.validator({ validateUniqueness: 'yes' })).toThrow(/boolean/);
   });
 });
 
@@ -122,6 +146,30 @@ describe('UUID lifecycle behavior', () => {
 
   beforeEach(async () => {
     ({ default: bootstrap } = await import('../server/src/bootstrap.js'));
+  });
+
+  it('warns when lifecycle uniqueness has no database unique constraint', async () => {
+    const { strapi } = makeStrapi({
+      attributes: { [field]: { ...uuidAttribute(), unique: false } },
+    });
+
+    await bootstrap({ strapi });
+
+    expect(strapi.log.warn).toHaveBeenCalledWith(
+      expect.stringContaining('under concurrency a race condition can produce duplicates')
+    );
+  });
+
+  it('does not emit the missing-constraint warning for a unique UUID field', async () => {
+    const { strapi } = makeStrapi({
+      attributes: { [field]: { ...uuidAttribute(), unique: true } },
+    });
+
+    await bootstrap({ strapi });
+
+    expect(strapi.log.warn).not.toHaveBeenCalledWith(
+      expect.stringContaining('under concurrency a race condition can produce duplicates')
+    );
   });
 
   it.each(['v4', 'v7'])('generates valid prefixed UUID %s values on create', async (version) => {
@@ -274,7 +322,7 @@ describe('UUID lifecycle behavior', () => {
 
   it('allows valid unique UUID changes when the field opts in to editing', async () => {
     const { strapi, getSubscriber } = makeStrapi({
-      attributes: { [field]: uuidAttribute({ 'allow-edit': true }) },
+      attributes: { [field]: uuidAttribute({ 'allow-edit': true, 'uuid-version': 'v7' }) },
     });
     strapi.getModel = () => ({ collectionName: 'articles' });
     strapi.db.connection = () => ({
@@ -299,6 +347,40 @@ describe('UUID lifecycle behavior', () => {
     await expect(getSubscriber().beforeCreate(event)).rejects.toMatchObject({
       name: 'ValidationError',
     });
+  });
+
+  it('rejects invalid field options before creating an entry', async () => {
+    const { strapi, getSubscriber } = makeStrapi({
+      attributes: { [field]: uuidAttribute({ 'uuid-version': 'v1', 'uuid-prefix': '../bad' }) },
+    });
+    await bootstrap({ strapi });
+
+    await expect(getSubscriber().beforeCreate({
+      model: { uid },
+      params: { data: {} },
+    })).rejects.toMatchObject({ name: 'ValidationError' });
+  });
+
+  it('leaves an empty field unchanged when per-field auto-generation is disabled', async () => {
+    const { strapi, getSubscriber } = makeStrapi({
+      attributes: { [field]: uuidAttribute({ 'disable-auto-generate': true }) },
+    });
+    await bootstrap({ strapi });
+    const event = { model: { uid }, params: { data: {} } };
+
+    await getSubscriber().beforeCreate(event);
+
+    expect(event.params.data[field]).toBeUndefined();
+  });
+
+  it('respects the plugin-wide auto-generation setting', async () => {
+    const { strapi, getSubscriber } = makeStrapi({ config: { autoGenerate: false } });
+    await bootstrap({ strapi });
+    const event = { model: { uid }, params: { data: {} } };
+
+    await getSubscriber().beforeCreate(event);
+
+    expect(event.params.data[field]).toBeUndefined();
   });
 
   it('returns a validation error instead of throwing on non-string prefixed updates', async () => {
@@ -341,6 +423,12 @@ describe('admin custom field registration', () => {
         options: expect.objectContaining({ validator: expect.any(Function) }),
       })
     );
+    const fieldDefinition = app.customFields.register.mock.calls[0][0];
+    const optionSchemas = fieldDefinition.options.validator();
+    expect(optionSchemas['uuid-version'].isValidSync('v7')).toBe(true);
+    expect(optionSchemas['uuid-version'].isValidSync('v1')).toBe(false);
+    expect(optionSchemas['uuid-prefix'].isValidSync('art_')).toBe(true);
+    expect(optionSchemas['uuid-prefix'].isValidSync('../bad')).toBe(false);
     expect(app.createSettingSection).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'field-uuid' }),
       expect.arrayContaining([expect.objectContaining({ id: 'management' })])
