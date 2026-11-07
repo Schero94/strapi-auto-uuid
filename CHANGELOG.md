@@ -1,3 +1,41 @@
+## [Unreleased]
+
+Next release: **2.1.1** (patch). Packaging and documentation only. No change
+to routes, responses, config keys, field options or stored data.
+
+### Fixed
+
+- Installing the plugin into a Strapi 5 app no longer prints peer dependency
+  warnings. Yarn 1 reported four unmet peers (`@strapi/design-system`,
+  `@strapi/icons`, `@strapi/utils`, `react-intl`) because a Strapi app gets
+  them only through `@strapi/strapi`. `@strapi/utils` is now a regular
+  dependency (`^5.24.0`, so npm, Yarn and pnpm reuse the copy Strapi
+  installs), and the three admin packages are optional peers
+  (`peerDependenciesMeta`). Checked with a fresh Strapi 5.61 app on Yarn
+  1.22.22, npm 11.21.2 and pnpm 12.18.0: zero warnings from this plugin.
+- `npm publish` no longer warns that `repository.url` was normalized. The URL
+  is now written as `git+https://github.com/Schero94/strapi-auto-uuid.git`.
+
+### Changed
+
+- `homepage` points to the project site
+  (https://schero94.github.io/strapi-auto-uuid/). The package description and
+  keywords say plainly what the plugin does.
+- README and project site: request and response examples with synthetic
+  data, a reference for every option, permission and environment variable, a
+  privacy note (the plugin makes no outbound network calls and has no
+  telemetry or license check), package manager notes, contributing guide and
+  upgrade notes for 2.0 and 2.1. Images in the README use absolute URLs so
+  they also show on npmjs.com.
+- The UUID management screenshots (desktop, mobile, dark mode and the repair
+  dialog) were retaken on a synthetic Strapi 5.61 host. The old ones showed a
+  stale `v1.1.0` version badge.
+
+### Upgrade notes
+
+Nothing to do. If your app lists `@strapi/utils` only because this plugin
+asked for it as a peer, you can remove it from your `package.json`.
+
 # [2.1.0](https://github.com/Schero94/strapi-auto-uuid/compare/v2.0.0...v2.1.0) (2026-11-07)
 
 
@@ -10,9 +48,9 @@
 
 * coordinate UUID writes, repairs and rate limits across instances ([3fe4100](https://github.com/Schero94/strapi-auto-uuid/commit/3fe4100a13093069a4a9494ed16e384a88b098e3))
 
-## [Unreleased]
+## 2.1.0 upgrade notes and details
 
-Next release: **2.1.0** (minor). Auto UUID now works with several Strapi
+Release **2.1.0** (minor). Auto UUID now works with several Strapi
 processes on one database, for example 2 Railway replicas with 4 pm2 cluster
 workers each. No change to routes, responses or existing config; the database
 is the only shared state (no Redis needed). See the README section "Running

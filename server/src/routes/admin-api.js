@@ -10,7 +10,8 @@
  *   plugin::field-uuid.export  → GET /migration/export
  *   plugin::field-uuid.import  → POST /migration/import
  *
- * Expensive endpoints are additionally rate-limited (per-user, in-memory).
+ * Expensive endpoints are additionally rate-limited per admin user. The
+ * counters live in the database or in memory (`rateLimitStore` option).
  * GET /health only requires an authenticated administrator.
  */
 
