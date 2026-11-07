@@ -46,8 +46,15 @@ export const LOCK_SPACES = Object.freeze({
   named: { id: 3, prefix: 'n' },
 });
 
-/** Named locks that exist as rows on MySQL. */
-export const NAMED_LOCKS = Object.freeze(['repair']);
+/**
+ * Named locks that exist as rows on MySQL.
+ * - `repair`: taken without waiting; only one repair or import runs at a time.
+ * - `repair-writes`: held exclusively by the running repair or import for its
+ *   whole transaction. A save that fills an empty write-once field takes it
+ *   shared first, so it never decides on a row the repair has already filled
+ *   but not yet committed (see {@link lockNamedShared}).
+ */
+export const NAMED_LOCKS = Object.freeze(['repair', 'repair-writes']);
 
 /**
  * Lock key of one UUID value. Case variants of a value share the key.
@@ -290,3 +297,51 @@ export async function tryNamedLock(strapi, name) {
     }
   });
 }
+
+/**
+ * Takes a named, transaction-scoped lock and waits for it. Shared holders do
+ * not block each other; an exclusive holder blocks everyone else. Must run
+ * inside a transaction; the lock is held until that transaction ends.
+ *
+ * - PostgreSQL: `pg_advisory_xact_lock` / `pg_advisory_xact_lock_shared`.
+ * - MySQL / MariaDB: `SELECT ... FOR UPDATE` / `LOCK IN SHARE MODE` on the
+ *   lock row (`LOCK IN SHARE MODE` is understood by MySQL 8.4 and MariaDB;
+ *   https://dev.mysql.com/doc/refman/8.4/en/innodb-locking-reads.html).
+ *
+ * @param {Object} strapi Strapi instance.
+ * @param {string} name One of {@link NAMED_LOCKS}.
+ * @param {{ shared?: boolean }} [options] Shared instead of exclusive.
+ * @returns {Promise<boolean>} Whether a lock was taken (false without
+ *   cross-process locks or outside a transaction).
+ * @throws {Error} Database errors, including a detected deadlock.
+ */
+export async function lockNamed(strapi, name, { shared = false } = {}) {
+  if (!hasClusterLocks(strapi) || !strapi.db.inTransaction()) return false;
+  const { key1, key2, row } = lockDescriptor(LOCK_SPACES.named, name);
+  await withOpenTransaction(strapi, async (trx) => {
+    if (getDialect(strapi) === 'postgres') {
+      await trx.raw(
+        shared ? 'select pg_advisory_xact_lock_shared(?, ?)' : 'select pg_advisory_xact_lock(?, ?)',
+        [key1, key2]
+      );
+      return;
+    }
+    await trx.raw(
+      `select name from ?? where name = ? ${shared ? 'lock in share mode' : 'for update'}`,
+      [tableRef(strapi, LOCK_TABLE), row]
+    );
+  });
+  return true;
+}
+
+/**
+ * Waits until no repair or import is writing, and keeps a new one from
+ * starting its writes, until the current transaction ends. Saves that fill
+ * an empty write-once field call it before they read the row: otherwise the
+ * save could read the row before a running repair commits its value and then
+ * overwrite that value once the repair's row lock is released.
+ *
+ * @param {Object} strapi Strapi instance.
+ * @returns {Promise<boolean>} Whether a lock was taken.
+ */
+export const lockNamedShared = (strapi) => lockNamed(strapi, 'repair-writes', { shared: true });

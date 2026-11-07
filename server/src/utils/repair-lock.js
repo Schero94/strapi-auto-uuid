@@ -10,8 +10,13 @@
  *    first statement of the repair transaction, so a repair started on
  *    another replica or pm2 worker is rejected with the same error. The
  *    database releases it on commit, rollback or a lost connection.
+ *
+ * The repair then also holds the `repair-writes` lock exclusively until it
+ * commits. Saves that fill an empty write-once field take that lock shared
+ * before they read, so they see the repair's values instead of overwriting
+ * them after the repair commits.
  */
-import { tryNamedLock } from './cluster-lock.js';
+import { lockNamed, tryNamedLock } from './cluster-lock.js';
 
 let activeOperation = null;
 
@@ -44,8 +49,10 @@ export async function runExclusiveRepair(name, operation) {
 }
 
 /**
- * Takes the cross-process repair lock for the open transaction. Call it as
- * the first statement inside the repair transaction.
+ * Takes the cross-process repair lock for the open transaction, then waits
+ * until saves that are filling write-once fields have committed and blocks
+ * new ones until the repair ends. Call it as the first statement inside the
+ * repair transaction.
  *
  * @param {Object} strapi Strapi instance.
  * @returns {Promise<void>}
@@ -53,6 +60,7 @@ export async function runExclusiveRepair(name, operation) {
  */
 export async function assertClusterRepairLock(strapi) {
   if (!(await tryNamedLock(strapi, 'repair'))) throw new RepairInProgressError();
+  await lockNamed(strapi, 'repair-writes');
 }
 
 /**

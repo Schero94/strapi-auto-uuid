@@ -14,7 +14,9 @@ import {
   LOCK_SPACES,
   allLockRows,
   lockDescriptor,
+  NAMED_LOCKS,
   lockKeys,
+  lockNamed,
   prepareClusterLocks,
   tryNamedLock,
   valueLockKey,
@@ -26,6 +28,8 @@ import {
   resolveRateLimitStoreKind,
 } from '../server/src/utils/rate-limit-store.js';
 import { affectedRows } from '../server/src/migrations/index.js';
+import { assertClusterRepairLock } from '../server/src/utils/repair-lock.js';
+import { withUuidRepairContext } from '../server/src/utils/repair-context.js';
 import { createSqliteHost, TABLE, UID } from './helpers/sqlite-strapi.js';
 
 const PG_URL = process.env.AUTO_UUID_PG_URL;
@@ -68,7 +72,8 @@ describe('lock keys', () => {
 
   it('seeds one MySQL row per bucket and named lock', () => {
     const rows = allLockRows();
-    expect(rows).toHaveLength(2 * LOCK_BUCKETS + 1);
+    expect(rows).toHaveLength(2 * LOCK_BUCKETS + NAMED_LOCKS.length);
+    expect(rows).toContain('n:repair-writes');
     expect(new Set(rows).size).toBe(rows.length);
   });
 });
@@ -115,6 +120,16 @@ describe('MySQL lock statements', () => {
     const rows = sql[0].bindings.slice(1);
     expect(rows).toEqual([...rows].sort());
     expect(new Set(rows).size).toBe(rows.length);
+  });
+
+  it('takes the repair-writes row shared or exclusive', async () => {
+    const { strapi, sql } = fakeMysql();
+    await prepareClusterLocks(strapi, { warn: vi.fn() });
+    expect(await lockNamed(strapi, 'repair-writes', { shared: true })).toBe(true);
+    expect(sql.at(-1).text).toMatch(/lock in share mode$/);
+    expect(sql.at(-1).bindings.at(-1)).toBe('n:repair-writes');
+    expect(await lockNamed(strapi, 'repair-writes')).toBe(true);
+    expect(sql.at(-1).text).toMatch(/for update$/);
   });
 
   it('reports a held repair lock from NOWAIT error 3572', async () => {
@@ -326,6 +341,48 @@ describe.skipIf(!PG_URL)('PostgreSQL: two processes on one database', () => {
     await held.done;
     await expect(second).rejects.toMatchObject({ details: { code: 'IMMUTABLE_UUID' } });
     expect((await a.rows())[0].publicId).toBe(first);
+  });
+
+  it('does not overwrite a value that a repair on another process filled', async () => {
+    const [a, b] = await pair();
+    await a.insertRaw([{ documentId: 'doc-repair', publicId: null }]);
+    const [{ id }] = await a.rows();
+    const repaired = randomUUID();
+    // A repair on process a fills the empty field and has not committed yet.
+    const held = withUuidRepairContext(() =>
+      holdTransaction(a, async () => {
+        await assertClusterRepairLock(a.strapi);
+        await a.db.query(UID).update({ where: { id }, data: { publicId: repaired } });
+      })
+    );
+    await held.ready;
+    // An editor on process b fills the same field. It must wait for the
+    // repair and then see its value, not overwrite it after the commit.
+    const editor = b.db.transaction(() =>
+      b.db.query(UID).update({ where: { id }, data: { publicId: randomUUID() } })
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    held.release();
+    await held.done;
+    await expect(editor).rejects.toMatchObject({ details: { code: 'IMMUTABLE_UUID' } });
+    expect((await a.rows())[0].publicId).toBe(repaired);
+  });
+
+  it('makes a repair wait for a save that is filling a write-once field', async () => {
+    const [a, b] = await pair();
+    const held = holdTransaction(a, () => lockNamed(a.strapi, 'repair-writes', { shared: true }));
+    expect(await held.ready).toBe(true);
+    let started = false;
+    const repair = b.db.transaction(async () => {
+      await assertClusterRepairLock(b.strapi);
+      started = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(started).toBe(false);
+    held.release();
+    await held.done;
+    await repair;
+    expect(started).toBe(true);
   });
 
   it('shares rate-limit counters between processes', async () => {

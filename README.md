@@ -258,19 +258,20 @@ The plugin is safe when several Strapi processes share one database, for example
 
 What is coordinated, and how:
 
-| Concern                                                         | Mechanism                                                                                                                                                                   |
-| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Two processes save the same client-supplied UUID                | Before the uniqueness check, the save takes a lock on that value for the rest of its transaction. The second save waits, then sees the first and gets 400 `DUPLICATE_UUID`. |
-| Two processes fill the same empty, non-editable field           | The save locks that field of the document and reads the row again. The second save sees the stored value and gets 400 `IMMUTABLE_UUID`.                                     |
-| Repair or import started on two processes (also two clicks)     | The repair transaction takes a repair lock without waiting. The other process answers 409 `REPAIR_IN_PROGRESS`.                                                             |
-| `autoMigrate` on every booting process                          | Same repair lock: one process repairs, the others log `Boot repair skipped` and continue starting.                                                                          |
-| An editor changes a row between the repair's scan and its write | Every repair and import write is guarded by the expected old value. A write that matches no row is not counted and is reported as skipped (`CONCURRENT_CHANGE`).            |
-| Admin rate limits (`/migration/run`, export, import, ...)       | One counter per admin and route in the table `field_uuid_rate_limits`, incremented with one atomic upsert, so the limit holds across all processes.                         |
+| Concern                                                                 | Mechanism                                                                                                                                                                   |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Two processes save the same client-supplied UUID                        | Before the uniqueness check, the save takes a lock on that value for the rest of its transaction. The second save waits, then sees the first and gets 400 `DUPLICATE_UUID`. |
+| Two processes fill the same empty, non-editable field                   | The save locks that field of the document and reads the row again. The second save sees the stored value and gets 400 `IMMUTABLE_UUID`.                                     |
+| Repair or import started on two processes (also two clicks)             | The repair transaction takes a repair lock without waiting. The other process answers 409 `REPAIR_IN_PROGRESS`.                                                             |
+| `autoMigrate` on every booting process                                  | Same repair lock: one process repairs, the others log `Boot repair skipped` and continue starting.                                                                          |
+| An editor changes a row between the repair's scan and its write         | Every repair and import write is guarded by the expected old value. A write that matches no row is not counted and is reported as skipped (`CONCURRENT_CHANGE`).            |
+| An editor fills an empty write-once field while a repair or import runs | The repair or import holds a write lock until it commits; such a save waits for it, then sees the stored value and gets 400 `IMMUTABLE_UUID` instead of overwriting it.     |
+| Admin rate limits (`/migration/run`, export, import, ...)               | One counter per admin and route in the table `field_uuid_rate_limits`, incremented with one atomic upsert, so the limit holds across all processes.                         |
 
 Locks are transaction-scoped and released by the database on commit, rollback or a lost connection, so a crashed worker never leaves one behind:
 
-- **PostgreSQL** (recommended): advisory locks (`pg_advisory_xact_lock`, `pg_try_advisory_xact_lock`). No extra table.
-- **MySQL 8 / MariaDB** (not tested live yet): row locks (`SELECT ... FOR UPDATE [NOWAIT]`) on the plugin table `field_uuid_locks` (2,049 small rows, created at startup). Reads after a lock use `FOR UPDATE`, because MySQL's default REPEATABLE READ would otherwise return an older snapshot. Add the [lookup index](#performance) on each UUID column so these reads lock only matching rows.
+- **PostgreSQL** (recommended): advisory locks (`pg_advisory_xact_lock`, `pg_advisory_xact_lock_shared`, `pg_try_advisory_xact_lock`). No extra table.
+- **MySQL 8 / MariaDB** (not tested live yet): row locks (`SELECT ... FOR UPDATE [NOWAIT]`, `LOCK IN SHARE MODE`) on the plugin table `field_uuid_locks` (2,050 small rows, created at startup). Reads after a lock use `FOR UPDATE`, because MySQL's default REPEATABLE READ would otherwise return an older snapshot. Add the [lookup index](#performance) on each UUID column so these reads lock only matching rows.
 - **SQLite**: one writer per file, so writes are already serialized. Running several processes on one SQLite file is not supported by Strapi; use one process.
 
 Values are hashed into 1,024 lock buckets per kind, so a large import holds at most 1,024 locks. Server-generated random values take no lock. Writes that run outside a transaction (a bare `strapi.db.query().create()`) take no lock either; the Document Service, the Content Manager and the REST and GraphQL APIs always use a transaction.

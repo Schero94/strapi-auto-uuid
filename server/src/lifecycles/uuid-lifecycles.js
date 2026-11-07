@@ -11,6 +11,7 @@ import {
   documentLockKey,
   getDialect,
   lockKeys,
+  lockNamedShared,
   valueLockKey,
 } from '../utils/cluster-lock.js';
 import { isUuidRepairContext } from '../utils/repair-context.js';
@@ -54,7 +55,8 @@ const sameValue = (a, b) => (isEmpty(a) && isEmpty(b)) || a === b;
  * the connection of the Document Service transaction:
  * - before a client-supplied value is checked for uniqueness, a lock on that
  *   value (field + canonical value);
- * - before an empty, non-editable field is filled on update, a lock on that
+ * - before an empty, non-editable field is filled on update, a shared lock
+ *   that waits for a running repair or import to commit, then a lock on that
  *   field of the document, followed by a fresh read of the target rows.
  * The second transaction waits until the first commits and then sees its
  * row, so it rejects the duplicate instead of inserting it. Server-generated
@@ -430,9 +432,13 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
    * @param {string} uid Content type UID.
    * @param {Array<{ field: string, attribute: Object }>} touched Fields in the update.
    * @param {Array<Record<string, unknown>>} rows Target rows read without a lock.
+   * A repair or import that runs on another process writes without these
+   * locks; the save first waits for it (shared `repair-writes` lock), so the
+   * fresh read sees the values it committed.
+   *
    * @returns {Promise<boolean>} Whether locks were taken; the caller must then read the rows again.
    */
-  const lockWriteOnceFields = (uid, touched, rows) => {
+  const lockWriteOnceFields = async (uid, touched, rows) => {
     const keys = [];
     for (const { field, attribute } of touched) {
       if (getOptions(uid, field, attribute).allowEdit) continue;
@@ -440,6 +446,8 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
         if (isEmpty(row[field])) keys.push(documentLockKey(uid, field, row.documentId));
       }
     }
+    if (keys.length === 0) return false;
+    await lockNamedShared(strapi);
     return lockKeys(strapi, LOCK_SPACES.document, keys);
   };
 
