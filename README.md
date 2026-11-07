@@ -6,6 +6,8 @@ A UUID custom field for Strapi 5. Every entry gets a UUID v4 or v7 when it is sa
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Strapi 5](https://img.shields.io/badge/Strapi-5.24%2B-4945FF.svg)](https://strapi.io)
 
+![UUID management page in the Strapi admin panel](pics/settings-light.png)
+
 **Project site:** [schero94.github.io/strapi-auto-uuid](https://schero94.github.io/strapi-auto-uuid/)
 
 This is the Strapi 5 continuation of [Cringe-Studio/strapi-auto-uuid](https://github.com/Cringe-Studio/strapi-auto-uuid), which supports Strapi 4 only.
@@ -13,6 +15,7 @@ This is the Strapi 5 continuation of [Cringe-Studio/strapi-auto-uuid](https://gi
 ## Contents
 
 - [What you get](#what-you-get)
+- [Screenshots](#screenshots)
 - [Requirements](#requirements)
 - [Quick start](#quick-start)
 - [Field options](#field-options)
@@ -34,6 +37,20 @@ This is the Strapi 5 continuation of [Cringe-Studio/strapi-auto-uuid](https://gi
 - Immutable values by default; editing can be allowed per field.
 - A settings page with counts per content type, a check, repairs with preview and confirmation, and export/import of all UUIDs.
 - Admin UI in English, German, French, Spanish and Portuguese.
+
+## Screenshots
+
+All screenshots use synthetic data.
+
+| UUID management                                                                                  | Repair preview                                                                            |
+| ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| ![UUID management page with counts and repair actions](pics/settings-light.png)                  | ![Repair all dialog with options and a preview](pics/repair-dialog-light.png)             |
+| **Editable field (copy and generate)**                                                           | **Locked fields, dark mode**                                                              |
+| ![Content Manager entry with an editable UUID field](pics/field-editable-light.png)              | ![Content Manager entry with locked UUID fields in dark mode](pics/field-locked-dark.png) |
+| **Field options in the Content-Type Builder**                                                    | **UUID management, dark mode**                                                            |
+| ![Content-Type Builder dialog with UUID version and prefix](pics/content-type-builder-light.png) | ![UUID management page in dark mode](pics/settings-dark.png)                              |
+| **Mobile, light**                                                                                | **Mobile, dark**                                                                          |
+| ![UUID management page on a phone](pics/settings-mobile-light.png)                               | ![UUID management page on a phone in dark mode](pics/settings-mobile-dark.png)            |
 
 ## Requirements
 

@@ -68,6 +68,15 @@ row, and the admin page was reworked within the existing design.
   entry is opened, and manual-entry fields can be filled when manual editing
   is off (once, then locked).
 
+### Documentation
+
+- README and the project site show screenshots of the UUID management page,
+  the repair preview, the field in the Content Manager (editable and locked,
+  light and dark), the Content-Type Builder options and the mobile layout,
+  all from synthetic data.
+- The project site no longer scrolls sideways on phones (long inline code
+  and the section navigation overflowed by up to 120 px at 320 px).
+
 ### Added
 
 - Repair preview inside the dialog and a confirmation before any write.
