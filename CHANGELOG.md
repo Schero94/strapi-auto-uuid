@@ -1,3 +1,83 @@
+## [Unreleased]
+
+Next release: **1.2.0** (minor, no breaking API change). Auto UUID now saves
+reliably on SQLite, checks and repairs every locale and every draft/published
+row, and the admin page was reworked within the existing design.
+
+### Upgrade notes
+
+1. Run Node.js 22.12 or newer (uuid 14 is ESM-only and is loaded with
+   `require(esm)`). Strapi 5.24 or newer is required; 5.61 is tested.
+2. Fields with **Allow manual editing** off are now generated on the server
+   only: a value sent on create (REST, GraphQL, Document Service) is replaced
+   with a generated one. API clients that supply their own UUIDs need
+   **Allow manual editing** on for that field.
+3. A create that sends a UUID already used by another document is rejected
+   with a 400 `ValidationError` instead of being stored as a duplicate.
+4. The admin route `POST /field-uuid/check-duplicate` was removed (the admin
+   UI never used it). `POST /field-uuid/migration/import` no longer accepts
+   `overwrite: true`; imports only fill empty fields.
+5. The plugin config is validated strictly: unknown keys fail at boot and
+   `maxRetryAttempts` must be an integer from 1 to 10. `allowManualEdit` is
+   still accepted but has no effect (it never had one).
+6. "Unique values" in the Content-Type Builder does not create a database
+   constraint in Strapi 5. The plugin enforces uniqueness on every save; the
+   option text now says so.
+
+### Fixed
+
+- Saving an entry with a UUID field on SQLite no longer stalls until the
+  connection timeout and fails: the update target is read inside the
+  Document Service transaction.
+- Immutability is checked against the row being saved, not an arbitrary
+  locale or draft/published row of the same document.
+- Changing a field's version or prefix no longer blocks saves of existing
+  entries, no longer gives published rows a different UUID than the draft,
+  and `autoMigrate` no longer rewrites those values.
+- Validation errors from the plugin return 400 with a message instead of
+  500: `@strapi/utils` is no longer bundled into the server build.
+- The Design System and icons are no longer bundled into the admin build
+  (largest admin chunk 1.8 MB -> 53 kB).
+- Check, repairs, export and import cover all locales and both draft and
+  published rows; duplicates are counted per document and the oldest
+  document keeps a shared UUID; draft and published rows stay in sync.
+- `createMany` and `updateMany` are validated; clones get a new UUID.
+- The admin page no longer replaces itself with a loader during actions,
+  no longer shows the empty state when loading failed, and refreshes its
+  counts after every change.
+- The Content Manager input no longer marks the form as modified when an
+  entry is opened, and manual-entry fields can be filled when manual editing
+  is off (once, then locked).
+
+### Added
+
+- Repair preview inside the dialog and a confirmation before any write.
+- Repair option for values in an older version or prefix (off by default).
+- Import from a file, with imported/unchanged/skipped counts.
+- French, Spanish and Portuguese translations.
+- Real SQLite test host for lifecycles and repairs; CI on Node 22 and 24;
+  Dependabot with verified auto-merge.
+
+### Security
+
+- Repairs and imports run one at a time (409 while another one runs) and
+  re-read the data inside their transaction.
+- Strict, bounded request schemas for repair and import endpoints; import
+  errors are returned as counts plus at most 20 samples.
+- The settings link and each action are shown only to roles with the
+  matching permission; the server checks the same permissions.
+- Rate-limit logs no longer contain user ids or IP addresses.
+- Release workflow: SHA-pinned actions, least-privilege permissions,
+  installs without lifecycle scripts, npm token fallback with provenance.
+
+### Dependencies
+
+- Peer dependencies: `@strapi/utils`, `@strapi/design-system` and
+  `@strapi/icons` added; React ranges aligned with Strapi 5.61.
+- `yup` stays pinned to 0.32.9 on purpose: the Content-Type Builder merges
+  the custom-field validator into its own yup 0.32.9 schema, so the plugin
+  must return schemas from that exact version. Server validation uses zod 4.
+
 # [1.1.0](https://github.com/Schero94/strapi-auto-uuid/compare/v1.0.3...v1.1.0) (2026-04-21)
 
 

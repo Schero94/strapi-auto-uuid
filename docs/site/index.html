@@ -97,9 +97,8 @@
         <section class="section" id="install">
           <h2>Install</h2>
           <p class="section-lead">
-            The package supports Strapi 5 through its <code>@strapi/strapi</code> peer dependency.
-            The package does not declare a Node.js engine range; its release workflow builds on
-            Node.js 22.
+            Requires Strapi 5.24 or newer (tested with 5.61) and Node.js 22.12 or newer. The package
+            declares both as peer dependency and engine range.
           </p>
           <div class="code-card">
             <div class="code-label"><span>Terminal</span><span>npm</span></div>
@@ -146,7 +145,10 @@
                 </tr>
                 <tr>
                   <td><code>validateUniqueness</code></td>
-                  <td>Check UUID uniqueness during lifecycle operations.</td>
+                  <td>
+                    Reject values used by another document, on every save, across all locales and
+                    draft and published rows.
+                  </td>
                   <td><code>true</code></td>
                 </tr>
                 <tr>
@@ -156,7 +158,10 @@
                 </tr>
                 <tr>
                   <td><code>autoMigrate</code></td>
-                  <td>Run migration fixes during startup.</td>
+                  <td>
+                    Repair empty, malformed and duplicate values on startup. Refused in production
+                    unless explicitly allowed; never replaces values in an older version or prefix.
+                  </td>
                   <td><code>false</code></td>
                 </tr>
                 <tr>
@@ -245,11 +250,6 @@
                   <td>Check plugin status.</td>
                 </tr>
                 <tr>
-                  <td><code>POST /check-duplicate</code></td>
-                  <td><code>read</code></td>
-                  <td>Validate a UUID against a content type and field.</td>
-                </tr>
-                <tr>
                   <td><code>GET /diagnose</code></td>
                   <td><code>read</code></td>
                   <td>Return UUID diagnosis results.</td>
@@ -274,7 +274,8 @@
                   <td><code>migrate</code></td>
                   <td>
                     Run selected fixes with <code>dryRun</code>, <code>fixEmpty</code>,
-                    <code>fixInvalid</code>, and <code>fixDuplicates</code>.
+                    <code>fixInvalid</code>, <code>fixDuplicates</code> and <code>fixLegacy</code>.
+                    Returns 409 while another repair runs.
                   </td>
                 </tr>
                 <tr>
@@ -286,7 +287,8 @@
                   <td><code>POST /migration/import</code></td>
                   <td><code>import</code></td>
                   <td>
-                    Import mappings with <code>dryRun</code> and <code>overwrite</code> options.
+                    Fill empty fields from an export with <code>dryRun</code>. Existing values are
+                    never replaced.
                   </td>
                 </tr>
               </tbody>
@@ -298,16 +300,18 @@
           <h2>Releases and testing</h2>
           <p class="section-lead">
             The repository uses Conventional Commits and semantic-release on pushes to
-            <code>main</code>. The workflow runs the tests, build, and package
-            verification, then publishes to npm with GitHub OIDC. Configure npm
-            Trusted Publishing for <code>Schero94/strapi-auto-uuid</code> and
-            <code>release.yml</code> before the first release. No long-lived
-            npm write token is used.
+            <code>main</code>. The workflow runs lint, format check, tests (including lifecycle and
+            repair tests on a real SQLite database), build and package verification, then publishes
+            to npm with provenance. It uses npm trusted publishing when it is configured and the
+            <code>NPM_TOKEN</code> secret otherwise. Pull requests run the same checks on Node.js 22
+            and 24.
           </p>
           <p>For local checks, run:</p>
           <div class="code-card">
             <div class="code-label"><span>Terminal</span><span>Node.js</span></div>
             <pre><code>npm ci --legacy-peer-deps
+npm run lint
+npm run format:check
 npm test
 npm run build
 npm run verify</code></pre>
