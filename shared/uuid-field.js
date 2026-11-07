@@ -88,10 +88,12 @@ export function resolveUuidFieldOptions(options = {}, defaultVersion = 'v4') {
  * @returns {boolean} Whether the value is a UUID of the requested version.
  */
 export function isUuidOfVersion(value, version) {
-  return SUPPORTED_UUID_VERSIONS.includes(version)
-    && typeof value === 'string'
-    && uuid.validate(value)
-    && value[14] === version.slice(1);
+  return (
+    SUPPORTED_UUID_VERSIONS.includes(version) &&
+    typeof value === 'string' &&
+    uuid.validate(value) &&
+    value[14] === version.slice(1)
+  );
 }
 
 /**
@@ -105,6 +107,35 @@ export function isUuidOfVersion(value, version) {
 export function isUuidFieldValue(value, options) {
   if (typeof value !== 'string' || !value.startsWith(options.prefix)) return false;
   return isUuidOfVersion(value.slice(options.prefix.length), options.version);
+}
+
+const UUID_LENGTH = 36;
+
+/**
+ * Classifies a stored value against the field configuration.
+ *
+ * - `empty`: null, undefined or an empty string.
+ * - `valid`: matches the configured prefix and UUID version.
+ * - `legacy`: a well-formed UUID with an optional valid prefix that no longer
+ *   matches the current field options, typically after the version or prefix
+ *   was changed in the Content-Type Builder. It is still a usable identifier.
+ * - `malformed`: anything else (not a UUID at all).
+ *
+ * @param {unknown} value Stored field value.
+ * @param {{ version: 'v4'|'v7', prefix: string }} options Normalized field options.
+ * @returns {'empty'|'valid'|'legacy'|'malformed'} Value category.
+ */
+export function classifyUuidFieldValue(value, options) {
+  if (value === null || value === undefined || value === '') return 'empty';
+  if (isUuidFieldValue(value, options)) return 'valid';
+  if (typeof value !== 'string' || value.length < UUID_LENGTH) return 'malformed';
+
+  const prefix = value.slice(0, value.length - UUID_LENGTH);
+  const candidate = value.slice(value.length - UUID_LENGTH);
+  if ((prefix === '' || UUID_PREFIX_PATTERN.test(prefix)) && uuid.validate(candidate)) {
+    return 'legacy';
+  }
+  return 'malformed';
 }
 
 /**

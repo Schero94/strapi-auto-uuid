@@ -41,9 +41,8 @@ const rateLimit = (cfg = {}, { strapi }) => {
     if (entry.count > max) {
       const retryAfterSec = Math.ceil((entry.expiresAt - now) / 1000);
       ctx.set('Retry-After', String(retryAfterSec));
-      strapi.log.warn(
-        `[strapi-auto-uuid] Rate limit exceeded on ${ctx.path} for ${userId ? `user:${userId}` : `ip:${ip}`}`
-      );
+      // Do not log the user id or IP address.
+      strapi.log.warn(`[strapi-auto-uuid] Rate limit exceeded on ${ctx.path}`);
       ctx.status = 429;
       ctx.body = {
         data: null,

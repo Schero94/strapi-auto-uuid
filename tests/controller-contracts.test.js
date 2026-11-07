@@ -43,6 +43,7 @@ describe('admin controller contracts', () => {
       fixEmpty: true,
       fixInvalid: true,
       fixDuplicates: true,
+      fixLegacy: false,
     });
     expect(JSON.stringify(autofixContext.body)).not.toContain('doc-private');
     expect(JSON.stringify(autofixContext.body)).not.toContain('uuid-private');
@@ -71,7 +72,31 @@ describe('admin controller contracts', () => {
       fixEmpty: false,
       fixInvalid: true,
       fixDuplicates: false,
+      fixLegacy: false,
     });
+  });
+
+  it('rejects a repair with every option switched off and unknown body keys', async () => {
+    const migrations = { runMigration: vi.fn() };
+    const { controller } = createController({ migrations });
+    const body = { fixEmpty: false, fixInvalid: false, fixDuplicates: false };
+    await expect(controller.runMigration({ request: { body } })).rejects.toMatchObject({
+      name: 'ValidationError',
+    });
+    await expect(
+      controller.autofix({ request: { body: { dryRun: false, extra: 1 } } })
+    ).rejects.toMatchObject({ name: 'ValidationError' });
+    expect(migrations.runMigration).not.toHaveBeenCalled();
+  });
+
+  it('answers 409 when another repair is running', async () => {
+    const busy = Object.assign(new Error('busy'), { code: 'REPAIR_IN_PROGRESS' });
+    const migrations = { runMigration: vi.fn(async () => Promise.reject(busy)) };
+    const { controller } = createController({ migrations });
+    const ctx = { request: { body: { dryRun: false } }, state: {} };
+    await controller.runMigration(ctx);
+    expect(ctx.status).toBe(409);
+    expect(ctx.body.error).toMatchObject({ status: 409, details: { code: 'REPAIR_IN_PROGRESS' } });
   });
 
   it('keeps import preview and overwrite protections at the controller boundary', async () => {
@@ -96,12 +121,30 @@ describe('admin controller contracts', () => {
 
     await controller.importMappings(ctx);
 
-    expect(migrations.importMappings).toHaveBeenCalledWith(mappings, {
-      dryRun: true,
-      overwrite: false,
-      actor: 9,
-    });
+    expect(migrations.importMappings).toHaveBeenCalledWith(mappings, { dryRun: true });
     expect(ctx.body).toMatchObject({ dryRun: true, imported: 1 });
+  });
+
+  it('refuses overwrite, unknown keys and oversized import values', async () => {
+    const migrations = { importMappings: vi.fn() };
+    const { controller } = createController({ migrations });
+    const entry = { documentId: 'doc-1', uuid: '550e8400-e29b-41d4-a716-446655440000' };
+    const wrap = (fields, extra = {}) => ({
+      request: { body: { mappings: { mappings: { [uid]: { fields } } }, ...extra } },
+    });
+    const bodies = [
+      wrap({ [field]: [entry] }, { overwrite: true }),
+      wrap({ [field]: [{ ...entry, extra: 'x' }] }),
+      wrap({ [field]: [{ ...entry, uuid: 'x'.repeat(53) }] }),
+      wrap({ 'bad field': [entry] }),
+      wrap({ [field]: Array.from({ length: 50_001 }, () => entry) }),
+    ];
+    for (const ctx of bodies) {
+      await expect(controller.importMappings(ctx)).rejects.toMatchObject({
+        name: 'ValidationError',
+      });
+    }
+    expect(migrations.importMappings).not.toHaveBeenCalled();
   });
 
   it('surfaces incomplete scan state without returning record values', async () => {
@@ -109,7 +152,15 @@ describe('admin controller contracts', () => {
       checkMigrationStatus: vi.fn(async () => ({
         needsMigration: true,
         hasErrors: true,
-        issues: [{ uid, field, operation: 'scan', message: 'Could not scan this field.', value: 'private' }],
+        issues: [
+          {
+            uid,
+            field,
+            operation: 'scan',
+            message: 'Could not scan this field.',
+            value: 'private',
+          },
+        ],
       })),
     };
     const { controller } = createController({ migrations });
@@ -126,7 +177,10 @@ describe('admin controller contracts', () => {
     const service = {
       getUuidModels: vi.fn(() => ({ [uid]: [field] })),
     };
-    const mappings = { exportedAt: '2026-10-14T00:00:00.000Z', mappings: { [uid]: { fields: {} } } };
+    const mappings = {
+      exportedAt: '2026-10-14T00:00:00.000Z',
+      mappings: { [uid]: { fields: {} } },
+    };
     const migrations = {
       checkMigrationStatus: vi.fn(async () => ({
         needsMigration: false,
@@ -152,6 +206,9 @@ describe('admin controller contracts', () => {
     });
     expect(exportContext.body).toBe(mappings);
     expect(exportContext.set).toHaveBeenCalledWith('Content-Type', 'application/json');
-    expect(exportContext.set).toHaveBeenCalledWith('Content-Disposition', expect.stringContaining('uuid-mappings-'));
+    expect(exportContext.set).toHaveBeenCalledWith(
+      'Content-Disposition',
+      expect.stringContaining('uuid-mappings-')
+    );
   });
 });

@@ -1,51 +1,41 @@
 /**
- * Migration Support for strapi-auto-uuid
+ * Scanning, repair, export and import of UUID field values.
  *
- * Handles migration, data integrity checks, export/import of UUID mappings.
- * Uses paginated queries and transactions for safe bulk operations.
+ * Every scan reads all database rows of a content type (all locales, drafts
+ * and published versions) through the transaction-aware query engine, in
+ * primary-key order. A "document" is one Strapi documentId; its draft,
+ * published version and locales may share a value. Repairs write with
+ * `updateMany` per document and old value, so draft and published rows stay
+ * in sync and no other field is touched.
+ *
+ * Real writes run in one transaction, inside the repair context (which lets
+ * the lifecycle hooks accept replacements of immutable values) and under a
+ * process-wide lock. The plan is computed inside that transaction, so values
+ * an editor changed after the preview are never overwritten with a stale plan.
  */
 
-import {
-  isUuidFieldValue,
-  resolveUuidFieldOptions,
-} from '../../../shared/uuid-field.js';
+import { classifyUuidFieldValue } from '../../../shared/uuid-field.js';
+import { getPluginConfig } from '../config/index.js';
 import { withUuidRepairContext } from '../utils/repair-context.js';
+import { runExclusiveRepair } from '../utils/repair-lock.js';
+import {
+  fetchFieldRows,
+  getUuidModels,
+  groupDuplicates,
+  resolveFieldOptions,
+} from '../utils/uuid-models.js';
 
-const MAX_QUERY_LIMIT = 10000;
+export const EXPORT_FORMAT = 2;
+export const MAX_REPORTED_ERRORS = 20;
 
-/**
- * Returns normalized field options from the active content-type schema.
- *
- * @param {Object} strapi Strapi instance.
- * @param {string} uid Content type UID.
- * @param {string} field UUID field name.
- * @returns {{ version: string, prefix: string, disableAutoGenerate: boolean, allowEdit: boolean }}
- */
-function getFieldOptions(strapi, uid, field) {
-  const attribute = strapi.contentTypes[uid]?.attributes?.[field];
-  const pluginConfig = strapi.config.get('plugin::field-uuid', {});
-  return resolveUuidFieldOptions(attribute?.options || {}, pluginConfig.defaultVersion || 'v4');
-}
+const isEmpty = (value) => value === null || value === undefined || value === '';
+const EMPTY_WHERE = (field) => ({ $or: [{ [field]: { $null: true } }, { [field]: '' }] });
 
-/**
- * Maps a caught failure to a user-safe field message without exposing database
- * errors, record identifiers or stored UUID values.
- *
- * @param {Error} error Failure from configuration or persistence code.
- * @returns {string} Actionable message safe for an admin response.
- */
-function safeFieldFailureMessage(error) {
-  if (error?.code === 'INVALID_UUID_FIELD_CONFIG') {
-    return 'UUID field configuration is invalid. Check its version and prefix.';
-  }
-  return 'Could not scan or update this UUID field. No unverified changes were applied.';
-}
-
-/** Carries safe field context when a batch must abort and roll back. */
+/** Carries safe context when a batch must abort and roll back. */
 class RepairWriteError extends Error {
   /**
    * @param {string} uid Content type UID.
-   * @param {string} field UUID custom-field name.
+   * @param {string} field UUID field name.
    * @param {string} operation Failed operation category.
    */
   constructor(uid, field, operation) {
@@ -58,529 +48,536 @@ class RepairWriteError extends Error {
 }
 
 /**
- * Fetches all entries for a given UID/fields using safe pagination.
- * @param {Object} strapi
- * @param {string} uid
- * @param {string[]} fields
- * @param {Object} [filters]
- * @returns {Promise<Array>}
+ * Maps a failure to a user-safe message and stable code without exposing
+ * database errors, identifiers or stored values.
+ *
+ * @param {Error} error Failure.
+ * @returns {{ code: string, message: string }} Safe description.
  */
-async function fetchAllEntries(strapi, uid, fields, filters) {
-  const allEntries = [];
-  let start = 0;
-
-  while (true) {
-    const batch = await strapi.documents(uid).findMany({
-      fields,
-      filters,
-      limit: MAX_QUERY_LIMIT,
-      start,
-    });
-
-    allEntries.push(...batch);
-    if (batch.length < MAX_QUERY_LIMIT) break;
-    start += MAX_QUERY_LIMIT;
+function safeFieldFailure(error) {
+  if (error?.code === 'INVALID_UUID_FIELD_CONFIG') {
+    return {
+      code: 'INVALID_UUID_FIELD_CONFIG',
+      message: 'UUID field configuration is invalid. Check its version and prefix.',
+    };
   }
-
-  return allEntries;
+  return {
+    code: 'SCAN_FAILED',
+    message: 'Could not scan this UUID field. No repairs were attempted.',
+  };
 }
 
-const migrations = ({ strapi }) => ({
+/**
+ * Collects errors as counts per code plus a bounded list of samples, so the
+ * response size does not grow with the payload.
+ */
+function createErrorCollector() {
+  const errors = [];
+  const errorCounts = {};
+  return {
+    errors,
+    errorCounts,
+    add(error) {
+      errorCounts[error.code] = (errorCounts[error.code] || 0) + 1;
+      if (errors.length < MAX_REPORTED_ERRORS) errors.push(error);
+    },
+  };
+}
+
+/**
+ * Analyses the rows of one UUID field.
+ *
+ * @param {Array<Record<string, unknown>>} rows Rows from fetchFieldRows.
+ * @param {string} field UUID field name.
+ * @param {{ version: string, prefix: string, disableAutoGenerate: boolean }} options Field options.
+ * @returns {Object} Counts and the per-document data needed to plan a repair.
+ */
+export function analyseFieldRows(rows, field, options) {
+  const documents = new Map();
+  for (const row of rows) {
+    let doc = documents.get(row.documentId);
+    if (!doc) {
+      doc = { firstId: row.id, values: new Set(), hasEmpty: false };
+      documents.set(row.documentId, doc);
+    }
+    if (isEmpty(row[field])) doc.hasEmpty = true;
+    else doc.values.add(row[field]);
+  }
+
+  const malformed = [];
+  const legacy = [];
+  const emptyDocuments = [];
+  for (const [documentId, doc] of documents) {
+    if (doc.hasEmpty) emptyDocuments.push(documentId);
+    for (const value of doc.values) {
+      const kind = classifyUuidFieldValue(value, options);
+      if (kind === 'malformed') malformed.push({ documentId, value });
+      if (kind === 'legacy') legacy.push({ documentId, value });
+    }
+  }
+
+  const duplicates = groupDuplicates(rows, field);
+  const manual = options.disableAutoGenerate;
+
+  return {
+    documents,
+    entryCount: documents.size,
+    emptyCount: manual ? 0 : emptyDocuments.length,
+    manualEmptyCount: manual ? emptyDocuments.length : 0,
+    invalidCount: malformed.length,
+    legacyCount: legacy.length,
+    duplicateCount: duplicates.reduce((sum, group) => sum + group.count - 1, 0),
+    duplicateGroups: duplicates.length,
+    emptyDocuments: manual ? [] : emptyDocuments,
+    malformed,
+    legacy,
+    duplicates,
+  };
+}
+
+const migrations = ({ strapi }) => {
+  const getOptions = (uid, field) =>
+    resolveFieldOptions(strapi, uid, field, getPluginConfig(strapi).defaultVersion);
+
+  const generateValue = (uid, field, reserved) =>
+    strapi.plugin('field-uuid').service('service').generateUniqueFieldValue(uid, field, reserved);
+
   /**
-   * Checks every UUID field against its configured version and prefix. Scan
-   * failures mark the overall report incomplete and block later repairs.
-   * Record identifiers and values are omitted unless an internal repair asks
-   * for them explicitly.
+   * Scans every UUID field. Field failures are reported and mark the report
+   * as incomplete instead of clean.
    *
-   * @param {Object} [options] Internal report options.
-   * @param {boolean} [options.includeRecordDetails=false] Include record values for internal migration logic only.
-   * @returns {Promise<Object>} Counts, safe field messages and optional internal repair details.
+   * @returns {Promise<{ fields: Array<Object>, failures: Array<Object> }>}
    */
-  async checkMigrationStatus({ includeRecordDetails = false } = {}) {
-    const { contentTypes } = strapi;
-    const report = {
-      needsMigration: false,
-      hasErrors: false,
-      contentTypes: [],
-      totalFields: 0,
-      totalEntries: 0,
-      issues: [],
-    };
-
-    for (const [uid, contentType] of Object.entries(contentTypes)) {
-      if (!uid.startsWith('api::')) continue;
-
-      const attributes = contentType.attributes;
-      for (const [attrName, attr] of Object.entries(attributes)) {
-        if (attr.customField !== 'plugin::field-uuid.uuid') continue;
-
-        const fieldInfo = {
-          uid,
-          field: attrName,
-          currentType: attr.type,
-          issues: [],
-        };
-
+  const scanAll = async () => {
+    const fields = [];
+    const failures = [];
+    for (const [uid, names] of Object.entries(getUuidModels(strapi))) {
+      for (const field of names) {
         try {
-          const fieldOptions = getFieldOptions(strapi, uid, attrName);
-          const entries = await fetchAllEntries(strapi, uid, ['documentId', attrName]);
+          const options = getOptions(uid, field);
+          const rows = await fetchFieldRows(strapi, uid, field);
+          fields.push({ uid, field, options, analysis: analyseFieldRows(rows, field, options) });
+        } catch (error) {
+          failures.push({ uid, field, ...safeFieldFailure(error) });
+        }
+      }
+    }
+    return { fields, failures };
+  };
 
-          fieldInfo.entryCount = entries.length;
-          report.totalEntries += entries.length;
+  /**
+   * Builds and optionally applies the repair plan for the scanned fields.
+   *
+   * @param {Array<Object>} fields Scan result.
+   * @param {Object} flags Which categories to repair.
+   * @param {boolean} write Whether to write.
+   * @param {Object} result Result to fill.
+   */
+  const applyPlan = async (fields, flags, write, result) => {
+    for (const { uid, field, options, analysis } of fields) {
+      const reserved = new Set();
+      const handled = new Set();
+      const replacements = new Map();
+      const query = strapi.db.query(uid);
 
-          let emptyCount = 0;
-          let invalidCount = 0;
-          const duplicates = new Map();
-
-          for (const entry of entries) {
-            const uuidValue = entry[attrName];
-
-            if (!uuidValue) {
-              emptyCount++;
-            } else if (!isUuidFieldValue(uuidValue, fieldOptions)) {
-              invalidCount++;
-              const issue = {
-                type: 'invalid',
-              };
-              if (includeRecordDetails) {
-                issue.documentId = entry.documentId;
-                issue.value = uuidValue;
-              }
-              fieldInfo.issues.push(issue);
-            }
-
-            if (uuidValue) {
-              if (!duplicates.has(uuidValue)) {
-                duplicates.set(uuidValue, []);
-              }
-              duplicates.get(uuidValue).push(entry.documentId);
-            }
-          }
-
-          let duplicateCount = 0;
-          for (const [uuid, docIds] of duplicates) {
-            if (docIds.length > 1) {
-              duplicateCount += docIds.length - 1;
-              const issue = {
-                type: 'duplicate',
-                count: docIds.length,
-              };
-              if (includeRecordDetails) {
-                issue.uuid = uuid;
-                issue.documentIds = docIds;
-              }
-              fieldInfo.issues.push(issue);
-            }
-          }
-
-          fieldInfo.emptyCount = emptyCount;
-          fieldInfo.invalidCount = invalidCount;
-          fieldInfo.duplicateCount = duplicateCount;
-
-          if (emptyCount > 0 || invalidCount > 0 || duplicateCount > 0) {
-            report.needsMigration = true;
-          }
-        } catch (err) {
-          fieldInfo.scanFailed = true;
-          fieldInfo.error = safeFieldFailureMessage(err);
-          report.hasErrors = true;
-          report.needsMigration = true;
-          report.issues.push({
-            uid,
-            field: attrName,
-            operation: err?.code === 'INVALID_UUID_FIELD_CONFIG' ? 'configuration' : 'scan',
-            message: fieldInfo.error,
+      const replace = async (type, documentId, oldValue, newValue, extra = {}) => {
+        result.changes.push({ type, uid, field, documentId, oldValue, newValue, ...extra });
+        if (!write) return;
+        try {
+          await query.updateMany({
+            where: isEmpty(oldValue)
+              ? { $and: [{ documentId }, EMPTY_WHERE(field)] }
+              : { documentId, [field]: oldValue },
+            data: { [field]: newValue },
           });
+        } catch {
+          throw new RepairWriteError(uid, field, 'write');
         }
+      };
 
-        report.contentTypes.push(fieldInfo);
-        report.totalFields++;
+      const fresh = async () => {
+        try {
+          const value = await generateValue(uid, field, reserved);
+          reserved.add(value);
+          return value;
+        } catch {
+          throw new RepairWriteError(uid, field, 'generate');
+        }
+      };
+
+      const replaceList = async (list, type, category) => {
+        for (const { documentId, value } of list) {
+          const key = `${documentId}\u0000${value}`;
+          if (handled.has(key)) continue;
+          handled.add(key);
+          const next = await fresh();
+          replacements.set(key, next);
+          await replace(type, documentId, value, next);
+          result.fixed[category] += 1;
+        }
+      };
+
+      if (flags.fixInvalid) await replaceList(analysis.malformed, 'invalid_fix', 'invalid');
+      if (flags.fixLegacy) await replaceList(analysis.legacy, 'legacy_fix', 'legacy');
+
+      if (flags.fixDuplicates) {
+        for (const group of analysis.duplicates) {
+          const [kept, ...others] = group.documentIds;
+          for (const documentId of others) {
+            const key = `${documentId}\u0000${group.uuid}`;
+            if (handled.has(key)) continue;
+            handled.add(key);
+            const next = await fresh();
+            replacements.set(key, next);
+            await replace('duplicate_fix', documentId, group.uuid, next, {
+              keptDocumentId: kept,
+            });
+            result.fixed.duplicates += 1;
+          }
+        }
+      }
+
+      if (flags.fixEmpty) {
+        for (const documentId of analysis.emptyDocuments) {
+          // Reuse the document's own value (for example a draft that has a
+          // value while the published row predates the field) when it has
+          // exactly one, taking a replacement made above into account.
+          const own = [...analysis.documents.get(documentId).values].map(
+            (value) => replacements.get(`${documentId}\u0000${value}`) ?? value
+          );
+          const reusable =
+            own.length === 1 && classifyUuidFieldValue(own[0], options) !== 'malformed'
+              ? own[0]
+              : null;
+          await replace('empty_fix', documentId, null, reusable ?? (await fresh()));
+          result.fixed.empty += 1;
+        }
       }
     }
+  };
 
-    return report;
-  },
+  return {
+    /**
+     * Returns per-field counts of empty, malformed, legacy-format and
+     * duplicate values. No record identifiers or values are included.
+     *
+     * @returns {Promise<Object>} Status report.
+     */
+    async checkMigrationStatus() {
+      const { fields, failures } = await scanAll();
+      const report = {
+        needsMigration: failures.length > 0,
+        hasErrors: failures.length > 0,
+        contentTypes: [],
+        totalFields: fields.length + failures.length,
+        totalEntries: 0,
+        issues: failures.map(({ uid, field, code, message }) => ({ uid, field, code, message })),
+      };
 
-  /**
-   * Runs a full repair only after every field has been scanned successfully.
-   * Real writes use the internal repair context and one transaction. Any
-   * failed write aborts the batch and returns a safe rollback result.
-   *
-   * @param {Object} [options] Repair options.
-   * @param {boolean} [options.dryRun=true] Preview only unless explicitly disabled.
-   * @param {boolean} [options.fixEmpty=true] Generate values for empty fields.
-   * @param {boolean} [options.fixInvalid=true] Replace values that fail field validation.
-   * @param {boolean} [options.fixDuplicates=true] Replace later entries in duplicate groups.
-   * @returns {Promise<Object>} Result counts and errors; the admin controller redacts record-level details.
-   */
-  async runMigration({
-    dryRun = true,
-    fixEmpty = true,
-    fixInvalid = true,
-    fixDuplicates = true,
-  } = {}) {
-    const status = await this.checkMigrationStatus({ includeRecordDetails: true });
-    const result = {
-      dryRun,
-      startedAt: new Date().toISOString(),
-      fixed: { empty: 0, invalid: 0, duplicates: 0 },
-      errors: [],
-      changes: [],
-    };
+      for (const { uid, field, analysis } of fields) {
+        const { entryCount, emptyCount, manualEmptyCount, invalidCount, legacyCount } = analysis;
+        const { duplicateCount, duplicateGroups } = analysis;
+        report.totalEntries += entryCount;
+        if (emptyCount > 0 || invalidCount > 0 || duplicateCount > 0) report.needsMigration = true;
+        report.contentTypes.push({
+          uid,
+          field,
+          entryCount,
+          emptyCount,
+          manualEmptyCount,
+          invalidCount,
+          legacyCount,
+          duplicateCount,
+          duplicateGroups,
+        });
+      }
+      for (const { uid, field, code, message } of failures) {
+        report.contentTypes.push({ uid, field, scanFailed: true, code, error: message });
+      }
+      return report;
+    },
 
-    if (status.hasErrors) {
-      result.aborted = true;
-      result.errors = status.issues;
-      result.completedAt = new Date().toISOString();
-      result.totalFixed = 0;
-      return result;
-    }
+    /**
+     * Repairs UUID values. Without `dryRun: false` only a preview is built.
+     *
+     * @param {Object} [options] Repair options.
+     * @param {boolean} [options.dryRun=true] Preview only.
+     * @param {boolean} [options.fixEmpty=true] Fill empty auto-generated fields.
+     * @param {boolean} [options.fixInvalid=true] Replace malformed values.
+     * @param {boolean} [options.fixDuplicates=true] Replace values shared by several documents
+     *   (the oldest document keeps its value).
+     * @param {boolean} [options.fixLegacy=false] Replace well-formed values whose version or prefix
+     *   no longer matches the field. Off by default because existing integrations may use them.
+     * @returns {Promise<Object>} Counts, changes (redacted by the controller) and safe errors.
+     * @throws {import('../utils/repair-lock.js').RepairInProgressError} When another repair runs.
+     */
+    async runMigration({
+      dryRun = true,
+      fixEmpty = true,
+      fixInvalid = true,
+      fixDuplicates = true,
+      fixLegacy = false,
+    } = {}) {
+      const flags = { fixEmpty, fixInvalid, fixDuplicates, fixLegacy };
+      const result = {
+        dryRun,
+        startedAt: new Date().toISOString(),
+        fixed: { empty: 0, invalid: 0, legacy: 0, duplicates: 0 },
+        errors: [],
+        changes: [],
+      };
+      const finish = () => {
+        const { empty, invalid, legacy, duplicates } = result.fixed;
+        result.totalFixed = empty + invalid + legacy + duplicates;
+        result.completedAt = new Date().toISOString();
+        return result;
+      };
 
-    const generateUniqueValue = async (uid, field, documentId) => {
+      const execute = async () => {
+        const { fields, failures } = await scanAll();
+        if (failures.length > 0) {
+          result.aborted = true;
+          result.errors = failures.map(({ uid, field, code, message }) => ({
+            uid,
+            field,
+            code,
+            message,
+          }));
+          return;
+        }
+        await applyPlan(fields, flags, !dryRun, result);
+      };
+
       try {
-        return await strapi.plugin('field-uuid').service('service')
-          .generateUniqueFieldValue(uid, field, documentId);
-      } catch {
-        throw new RepairWriteError(uid, field, 'generate');
-      }
-    };
-
-    const executeMigration = async () => {
-      for (const ctInfo of status.contentTypes) {
-        const { uid, field, issues } = ctInfo;
-        const changedDocumentIds = new Set();
-
-        if (fixEmpty && ctInfo.emptyCount > 0) {
-          try {
-            const emptyEntries = await fetchAllEntries(strapi, uid, ['documentId'], {
-              $or: [
-                { [field]: { $null: true } },
-                { [field]: '' },
-              ],
-            });
-
-            for (const entry of emptyEntries) {
-              const newUuid = await generateUniqueValue(uid, field, entry.documentId);
-              result.changes.push({
-                type: 'empty_fix',
-                uid,
-                field,
-                documentId: entry.documentId,
-                oldValue: null,
-                newValue: newUuid,
-              });
-              changedDocumentIds.add(entry.documentId);
-
-              if (!dryRun) {
-                await withUuidRepairContext(() => strapi.documents(uid).update({
-                  documentId: entry.documentId,
-                  data: { [field]: newUuid },
-                }));
-              }
-              result.fixed.empty++;
-            }
-          } catch {
-            throw new RepairWriteError(uid, field, 'repair');
+        if (dryRun) {
+          await execute();
+        } else {
+          await runExclusiveRepair('migration', () =>
+            withUuidRepairContext(() => strapi.db.transaction(execute))
+          );
+          if (result.totalFixed !== 0 || result.changes.length > 0) {
+            strapi.log.info(
+              `[strapi-auto-uuid] Repair finished: ${result.changes.length} change(s)`
+            );
           }
         }
+      } catch (error) {
+        if (error?.code === 'REPAIR_IN_PROGRESS') throw error;
+        result.failed = true;
+        result.rolledBack = !dryRun;
+        result.errors = [
+          {
+            uid: error?.uid,
+            field: error?.field,
+            code: 'REPAIR_FAILED',
+            operation: error?.operation || 'batch',
+            message: dryRun
+              ? 'Repair preview failed. No changes were made.'
+              : 'Repair failed. The transaction was rolled back; no changes were kept.',
+          },
+        ];
+        result.changes = [];
+        result.fixed = { empty: 0, invalid: 0, legacy: 0, duplicates: 0 };
+      }
+      return finish();
+    },
 
-        if (fixInvalid) {
-          const invalidIssues = issues.filter((i) => i.type === 'invalid');
-          for (const issue of invalidIssues) {
-            const newUuid = await generateUniqueValue(uid, field, issue.documentId);
-            result.changes.push({
-              type: 'invalid_fix',
-              uid,
-              field,
-              documentId: issue.documentId,
-              oldValue: issue.value,
-              newValue: newUuid,
-            });
-            changedDocumentIds.add(issue.documentId);
+    /**
+     * Exports every non-empty UUID value as `{ documentId, locale?, uuid }`
+     * per content type and field. Draft and published rows with the same
+     * value are listed once.
+     *
+     * @returns {Promise<Object>} Export document.
+     */
+    async exportMappings() {
+      const exportData = {
+        exportedAt: new Date().toISOString(),
+        format: EXPORT_FORMAT,
+        mappings: {},
+      };
 
-            if (!dryRun) {
+      for (const [uid, names] of Object.entries(getUuidModels(strapi))) {
+        exportData.mappings[uid] = { fields: {} };
+        for (const field of names) {
+          const rows = await fetchFieldRows(strapi, uid, field);
+          const seen = new Set();
+          const entries = [];
+          for (const row of rows) {
+            if (isEmpty(row[field])) continue;
+            const key = `${row.documentId}\u0000${row.locale ?? ''}\u0000${row[field]}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const entry = { documentId: row.documentId, uuid: row[field] };
+            if (row.locale) entry.locale = row.locale;
+            entries.push(entry);
+          }
+          exportData.mappings[uid].fields[field] = entries;
+        }
+      }
+      return exportData;
+    },
+
+    /**
+     * Imports UUID values into empty fields. Existing values are never
+     * replaced. A value must match the destination field's version and prefix
+     * and must not be used by another document.
+     *
+     * @param {Object} importData Export-shaped document (validated by the controller).
+     * @param {Object} [options] Import options.
+     * @param {boolean} [options.dryRun=true] Preview only.
+     * @returns {Promise<Object>} Counts, bounded error samples and error counts.
+     * @throws {import('../utils/repair-lock.js').RepairInProgressError} When another repair runs.
+     */
+    async importMappings(importData, { dryRun = true } = {}) {
+      const collector = createErrorCollector();
+      const result = {
+        dryRun,
+        imported: 0,
+        skipped: 0,
+        unchanged: 0,
+        errors: collector.errors,
+        errorCounts: collector.errorCounts,
+        changes: [],
+      };
+
+      if (!importData?.mappings || typeof importData.mappings !== 'object') {
+        collector.add({
+          code: 'INVALID_IMPORT',
+          message: 'Invalid import data. A mappings object is required.',
+        });
+        return result;
+      }
+
+      const service = strapi.plugin('field-uuid').service('service');
+
+      const execute = async () => {
+        for (const [uid, ctData] of Object.entries(importData.mappings)) {
+          for (const [field, entries] of Object.entries(ctData?.fields || {})) {
+            if (!service.validateUuidField(uid, field).valid) {
+              collector.add({
+                uid,
+                field,
+                code: 'UNKNOWN_FIELD',
+                message: 'The target UUID field is missing or has an invalid configuration.',
+              });
+              result.skipped += entries.length;
+              continue;
+            }
+            const options = service.getFieldOptions(uid, field);
+            const seenValues = new Map();
+            const seenTargets = new Set();
+            const query = strapi.db.query(uid);
+
+            for (const entry of entries) {
+              const skip = (code, message) => {
+                result.skipped += 1;
+                if (code) collector.add({ uid, field, code, message });
+              };
+              const target = `${entry.documentId}\u0000${entry.locale ?? ''}`;
+
+              if (classifyUuidFieldValue(entry.uuid, options) !== 'valid') {
+                skip(
+                  'IMPORT_VALUE_MISMATCH',
+                  "An imported value does not match this field's UUID version and prefix."
+                );
+                continue;
+              }
+              if (seenTargets.has(target)) {
+                skip('DUPLICATE_TARGET', 'An entry appears more than once in this file.');
+                continue;
+              }
+              seenTargets.add(target);
+              const owner = seenValues.get(entry.uuid);
+              if (owner !== undefined && owner !== entry.documentId) {
+                skip('DUPLICATE_VALUE', 'An imported UUID value is repeated in this file.');
+                continue;
+              }
+              seenValues.set(entry.uuid, entry.documentId);
+
               try {
-                await withUuidRepairContext(() => strapi.documents(uid).update({
-                  documentId: issue.documentId,
-                  data: { [field]: newUuid },
-                }));
-              } catch {
-                throw new RepairWriteError(uid, field, 'write');
-              }
-            }
-            result.fixed.invalid++;
-          }
-        }
-
-        if (fixDuplicates) {
-          const duplicateIssues = issues.filter((i) => i.type === 'duplicate');
-          for (const issue of duplicateIssues) {
-            const [, ...fixDocIds] = issue.documentIds;
-
-            for (const docId of fixDocIds) {
-              if (changedDocumentIds.has(docId)) continue;
-              const newUuid = await generateUniqueValue(uid, field, docId);
-              result.changes.push({
-                type: 'duplicate_fix',
-                uid,
-                field,
-                documentId: docId,
-                oldValue: issue.uuid,
-                newValue: newUuid,
-                keptDocumentId: issue.documentIds[0],
-              });
-              changedDocumentIds.add(docId);
-
-              if (!dryRun) {
-                try {
-                  await withUuidRepairContext(() => strapi.documents(uid).update({
-                    documentId: docId,
-                    data: { [field]: newUuid },
-                  }));
-                } catch {
-                  throw new RepairWriteError(uid, field, 'write');
+                const where = { documentId: entry.documentId };
+                if (entry.locale) where.locale = entry.locale;
+                const rows = await query.findMany({ where, select: ['id', field] });
+                if (rows.length === 0) {
+                  skip(
+                    'TARGET_NOT_FOUND',
+                    'A target entry was not found. Its mapping was skipped.'
+                  );
+                  continue;
                 }
-              }
-              result.fixed.duplicates++;
-            }
-          }
-        }
-      }
-    };
+                const current = rows.map((row) => row[field]).filter((value) => !isEmpty(value));
+                if (current.length === rows.length && current.every((v) => v === entry.uuid)) {
+                  result.unchanged += 1;
+                  continue;
+                }
+                if (current.some((value) => value !== entry.uuid)) {
+                  skip(
+                    'TARGET_HAS_VALUE',
+                    'A target entry already has a different UUID. Existing values are never replaced.'
+                  );
+                  continue;
+                }
+                const conflict = await query.findOne({
+                  where: { [field]: entry.uuid, documentId: { $ne: entry.documentId } },
+                  select: ['id'],
+                });
+                if (conflict) {
+                  skip('IMPORT_CONFLICT', 'The imported UUID is already used by another entry.');
+                  continue;
+                }
 
-    try {
-      if (dryRun) {
-        await executeMigration();
-      } else {
-        await withUuidRepairContext(() => strapi.db.transaction(executeMigration));
-      }
-    } catch (error) {
-      result.failed = true;
-      result.rolledBack = !dryRun;
-      result.errors = [{
-        uid: error?.uid,
-        field: error?.field,
-        operation: error?.operation || 'batch',
-        message: dryRun
-          ? 'Repair preview failed. No changes were made.'
-          : 'Repair failed. The transaction was rolled back; no changes were kept.',
-      }];
-      result.changes = [];
-      result.fixed = { empty: 0, invalid: 0, duplicates: 0 };
-      result.totalFixed = 0;
-      result.completedAt = new Date().toISOString();
-      return result;
-    }
-
-    result.completedAt = new Date().toISOString();
-    result.totalFixed = result.fixed.empty + result.fixed.invalid + result.fixed.duplicates;
-
-    if (!dryRun && result.totalFixed > 0) {
-      strapi.log.info(`[strapi-auto-uuid] Migration completed: ${result.totalFixed} entries fixed`);
-    }
-
-    return result;
-  },
-
-  /**
-   * Exports UUID mappings for backup.
-   * @returns {Promise<Object>}
-   */
-  async exportMappings() {
-    const { contentTypes } = strapi;
-    const exportData = {
-      exportedAt: new Date().toISOString(),
-      version: '1.1.0',
-      mappings: {},
-    };
-
-    for (const [uid, contentType] of Object.entries(contentTypes)) {
-      if (!uid.startsWith('api::')) continue;
-
-      const attributes = contentType.attributes;
-      for (const [attrName, attr] of Object.entries(attributes)) {
-        if (attr.customField !== 'plugin::field-uuid.uuid') continue;
-
-        const entries = await fetchAllEntries(strapi, uid, ['documentId', attrName]);
-
-        if (!exportData.mappings[uid]) {
-          exportData.mappings[uid] = { fields: {} };
-        }
-
-        exportData.mappings[uid].fields[attrName] = entries.map((e) => ({
-          documentId: e.documentId,
-          uuid: e[attrName],
-        }));
-      }
-    }
-
-    return exportData;
-  },
-
-  /**
-   * Imports UUID mappings with validation.
-   * Only allows writing to api:: content types with actual UUID fields.
-   * Imported values must match the destination field's UUID version and
-   * prefix, and must not collide with another document.
-   *
-   * @param {Object} importData Export-shaped mapping data.
-   * @param {Object} [options] Import options.
-   * @param {boolean} [options.dryRun=true] Preview only unless explicitly disabled.
-   * @param {boolean} [options.overwrite=false] Replace existing non-empty values.
-   * @returns {Promise<Object>} Counts and safe validation/write errors.
-   */
-  async importMappings(importData, { dryRun = true, overwrite = false } = {}) {
-    const result = {
-      dryRun,
-      imported: 0,
-      skipped: 0,
-      errors: [],
-      changes: [],
-    };
-
-    if (!importData?.mappings) {
-      result.errors.push({
-        operation: 'validation',
-        message: 'Invalid import data. A mappings object is required.',
-      });
-      return result;
-    }
-
-    const serviceInstance = strapi.plugin('field-uuid').service('service');
-    const seenValues = new Set();
-
-    const executeImport = async () => {
-      for (const [uid, ctData] of Object.entries(importData.mappings)) {
-        for (const [field, entries] of Object.entries(ctData.fields)) {
-          const validation = serviceInstance.validateUuidField(uid, field);
-          if (!validation.valid) {
-            result.errors.push({
-              uid,
-              field,
-              operation: 'validation',
-              message: 'The target UUID field is missing or has invalid configuration.',
-            });
-            result.skipped += entries.length;
-            continue;
-          }
-          const fieldOptions = serviceInstance.getFieldOptions(uid, field);
-
-          for (const entry of entries) {
-            if (!entry.documentId || !entry.uuid) {
-              result.skipped++;
-              continue;
-            }
-
-            if (!isUuidFieldValue(entry.uuid, fieldOptions)) {
-              result.skipped++;
-              result.errors.push({
-                uid,
-                field,
-                operation: 'validation',
-                message: "An imported value does not match this field's UUID version and prefix.",
-              });
-              continue;
-            }
-
-            const identity = `${uid}\u0000${field}\u0000${entry.uuid}`;
-            if (seenValues.has(identity)) {
-              result.skipped++;
-              result.errors.push({
-                uid,
-                field,
-                operation: 'uniqueness',
-                message: 'An imported UUID value is repeated in this file.',
-              });
-              continue;
-            }
-            seenValues.add(identity);
-
-            try {
-              const existing = await strapi.documents(uid).findFirst({
-                filters: { documentId: entry.documentId },
-                fields: ['documentId', field],
-              });
-
-              if (!existing) {
-                result.skipped++;
-                result.errors.push({
+                result.changes.push({
                   uid,
                   field,
-                  operation: 'lookup',
-                  message: 'A target entry was not found. Its mapping was skipped.',
-                });
-                continue;
-              }
-
-              if (existing[field] && !overwrite) {
-                result.skipped++;
-                continue;
-              }
-
-              const duplicate = await serviceInstance.checkDuplicate({
-                contentType: uid,
-                field,
-                uuid: entry.uuid,
-                excludeDocumentId: entry.documentId,
-              });
-              if (!duplicate.valid || duplicate.exists) {
-                result.skipped++;
-                result.errors.push({
-                  uid,
-                  field,
-                  operation: 'uniqueness',
-                  message: 'The imported UUID conflicts with another entry or field configuration.',
-                });
-                continue;
-              }
-
-              result.changes.push({
-                uid,
-                field,
-                documentId: entry.documentId,
-                oldValue: existing[field],
-                newValue: entry.uuid,
-              });
-
-              if (!dryRun) {
-                await withUuidRepairContext(() => strapi.documents(uid).update({
                   documentId: entry.documentId,
-                  data: { [field]: entry.uuid },
-                }));
+                  newValue: entry.uuid,
+                });
+                if (!dryRun) {
+                  await query.updateMany({
+                    where: { $and: [where, EMPTY_WHERE(field)] },
+                    data: { [field]: entry.uuid },
+                  });
+                }
+                result.imported += 1;
+              } catch {
+                throw new RepairWriteError(uid, field, 'import');
               }
-              result.imported++;
-            } catch {
-              throw new RepairWriteError(uid, field, 'import');
             }
           }
         }
-      }
-    };
+      };
 
-    try {
-      if (dryRun) {
-        await executeImport();
-      } else {
-        await withUuidRepairContext(() => strapi.db.transaction(executeImport));
+      try {
+        if (dryRun) {
+          await execute();
+        } else {
+          await runExclusiveRepair('import', () =>
+            withUuidRepairContext(() => strapi.db.transaction(execute))
+          );
+        }
+      } catch (error) {
+        if (error?.code === 'REPAIR_IN_PROGRESS') throw error;
+        result.failed = true;
+        result.rolledBack = !dryRun;
+        result.imported = 0;
+        result.skipped = 0;
+        result.unchanged = 0;
+        result.changes = [];
+        collector.errors.length = 0;
+        for (const key of Object.keys(collector.errorCounts)) delete collector.errorCounts[key];
+        collector.add({
+          uid: error?.uid,
+          field: error?.field,
+          code: 'IMPORT_FAILED',
+          operation: error?.operation || 'batch',
+          message: dryRun
+            ? 'Import preview failed. No changes were made.'
+            : 'Import failed. The transaction was rolled back; no changes were kept.',
+        });
       }
-    } catch (error) {
-      result.failed = true;
-      result.rolledBack = !dryRun;
-      result.imported = 0;
-      result.skipped = 0;
-      result.changes = [];
-      result.errors = [{
-        uid: error?.uid,
-        field: error?.field,
-        operation: error?.operation || 'batch',
-        message: dryRun
-          ? 'Import preview failed. No changes were made.'
-          : 'Import failed. The transaction was rolled back; no changes were kept.',
-      }];
-    }
-
-    return result;
-  },
-});
+      return result;
+    },
+  };
+};
 
 export default migrations;
