@@ -59,11 +59,11 @@ All screenshots use synthetic data.
 
 ## Requirements
 
-| Plugin version     | Strapi                                                                                  | Node.js                  | Database                                                                   |
-| ------------------ | --------------------------------------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------- |
-| 2.x (next release) | 5.24 or newer, tested with 5.61                                                         | 22.12 or newer, up to 26 | Any database Strapi supports; the test suite runs on SQLite and PostgreSQL |
-| 1.x                | 5.x                                                                                     | as required by Strapi    | Any database Strapi supports                                               |
-| Strapi 4           | use [Cringe-Studio/strapi-auto-uuid](https://github.com/Cringe-Studio/strapi-auto-uuid) |                          |                                                                            |
+| Plugin version | Strapi                                                                                  | Node.js                  | Database                                                                   |
+| -------------- | --------------------------------------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------- |
+| 2.x            | 5.24 or newer, tested with 5.61                                                         | 22.12 or newer, up to 26 | Any database Strapi supports; the test suite runs on SQLite and PostgreSQL |
+| 1.x            | 5.x                                                                                     | as required by Strapi    | Any database Strapi supports                                               |
+| Strapi 4       | use [Cringe-Studio/strapi-auto-uuid](https://github.com/Cringe-Studio/strapi-auto-uuid) |                          |                                                                            |
 
 ## Quick start
 
@@ -256,7 +256,16 @@ The test suite runs this code on SQLite and checks that the lookup changes from 
 
 The plugin is safe when several Strapi processes share one database, for example 2 Railway replicas that each run 4 pm2 cluster workers (8 Node processes, no sticky sessions). The database is the only shared state; Redis or any other service is not needed.
 
-What is coordinated, and how:
+### Requirements for several instances
+
+- **Database**: PostgreSQL (recommended; tested with 8 processes on PostgreSQL 16) or MySQL 8 / MariaDB with InnoDB (supported, not yet tested live). All processes must use the same database and schema.
+- **Table permission**: the database user must be allowed to create tables in that schema at startup (`field_uuid_rate_limits`, and `field_uuid_locks` on MySQL). Strapi's own schema sync needs the same right. If a table cannot be created, the plugin logs a warning (`Rate-limit table unavailable` or `Could not prepare the lock table`) and falls back to per-process counters or locks, which do not hold across processes.
+- **Connections**: every process opens its own pool; see the pool sizing note under [Configuration](#configuration).
+- **SQLite**: one process only. Several processes on one SQLite file are not supported by Strapi.
+- **Redis**: optional and not used by this plugin. Counters and locks live in the database, so adding Redis changes nothing for Auto UUID.
+- **Sticky sessions**: not needed. Any process can serve any request. Only the list of UUID fields and their options is read per process at startup (see [Rolling deploys](#rolling-deploys-and-schema-changes)).
+
+What is shared between the processes, and how:
 
 | Concern                                                                 | Mechanism                                                                                                                                                                   |
 | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -339,7 +348,7 @@ Each process reads the UUID fields and their options once at startup. During a r
 
 ## Upgrading from 1.x
 
-The next release is a major version (2.0.0) because some write rules are stricter:
+Version 2.0.0 is a major release because some write rules are stricter:
 
 1. Node.js 22.12 or newer and Strapi 5.24 or newer are required.
 2. Fields with **Allow manual editing** off are generated on the server only. A value sent on create is replaced. API clients that send their own UUIDs need **Allow manual editing** on for that field.
