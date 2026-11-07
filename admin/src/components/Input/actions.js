@@ -66,3 +66,33 @@ export const createUuidInputActions = ({
     }
   },
 });
+
+/**
+ * Derives how the Content Manager field behaves from its options and values.
+ *
+ * - Editable when "Allow manual editing" is on, or when auto-generation is
+ *   off and no value has been saved yet (enter once, then locked).
+ * - Never generates on mount: the server generates missing values on save,
+ *   so opening an entry never marks the form as modified.
+ * - Replacing a saved value asks for confirmation.
+ *
+ * @param {Object} state Field state.
+ * @param {{ allowEdit: boolean, disableAutoGenerate: boolean }|null} state.options Normalized options.
+ * @param {unknown} state.savedValue Value when the form was opened.
+ * @param {boolean} [state.disabled=false] Content Manager disabled state (permissions, history).
+ * @returns {{ editable: boolean, canGenerate: boolean, confirmReplace: boolean,
+ *   placeholder: 'generatedOnSave'|'enterManually'|'none' }}
+ */
+export const getUuidInputState = ({ options, savedValue, disabled = false }) => {
+  if (!options) {
+    return { editable: false, canGenerate: false, confirmReplace: false, placeholder: 'none' };
+  }
+  const saved = typeof savedValue === 'string' && savedValue !== '';
+  const editable = !disabled && (options.allowEdit || (options.disableAutoGenerate && !saved));
+  return {
+    editable,
+    canGenerate: editable,
+    confirmReplace: saved,
+    placeholder: options.disableAutoGenerate ? 'enterManually' : 'generatedOnSave',
+  };
+};
