@@ -192,6 +192,16 @@ describe('create rules', () => {
       host.inTransaction(() => host.db.query(UID).create({ data: { editableId: 'nope' } }))
     );
     expect(error?.details?.code).toBe('INVALID_UUID');
+    // Content Manager form contract: details.errors[].path is joined into the
+    // field name; every other key would be treated as a string array.
+    expect(error.details.errors).toEqual([
+      { path: ['editableId'], message: error.message, name: 'ValidationError' },
+    ]);
+    const formErrors = error.details.errors.reduce(
+      (acc, { path, message }) => ({ ...acc, [path.join('.')]: message }),
+      {}
+    );
+    expect(formErrors).toEqual({ editableId: error.message });
   });
 
   it('validates every row of createMany, including duplicates inside the batch', async () => {

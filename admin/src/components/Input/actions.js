@@ -72,20 +72,34 @@ export const createUuidInputActions = ({
  *
  * - Editable when "Allow manual editing" is on, or when auto-generation is
  *   off and no value has been saved yet (enter once, then locked).
- * - Never generates on mount: the server generates missing values on save,
- *   so opening an entry never marks the form as modified.
+ * - Content-type fields never generate on mount: the server generates missing
+ *   values on save, so opening an entry never marks the form as modified.
+ * - Fields inside components and dynamic zones are not managed on the
+ *   server, so an empty one is filled in the browser when it is shown.
  * - Replacing a saved value asks for confirmation.
  *
  * @param {Object} state Field state.
  * @param {{ allowEdit: boolean, disableAutoGenerate: boolean }|null} state.options Normalized options.
  * @param {unknown} state.savedValue Value when the form was opened.
  * @param {boolean} [state.disabled=false] Content Manager disabled state (permissions, history).
+ * @param {boolean} [state.inComponent=false] Whether the field belongs to a component or dynamic zone.
  * @returns {{ editable: boolean, canGenerate: boolean, confirmReplace: boolean,
- *   placeholder: 'generatedOnSave'|'enterManually'|'none' }}
+ *   generateOnMount: boolean, placeholder: 'generatedOnSave'|'enterManually'|'none' }}
  */
-export const getUuidInputState = ({ options, savedValue, disabled = false }) => {
+export const getUuidInputState = ({
+  options,
+  savedValue,
+  disabled = false,
+  inComponent = false,
+}) => {
   if (!options) {
-    return { editable: false, canGenerate: false, confirmReplace: false, placeholder: 'none' };
+    return {
+      editable: false,
+      canGenerate: false,
+      confirmReplace: false,
+      generateOnMount: false,
+      placeholder: 'none',
+    };
   }
   const saved = typeof savedValue === 'string' && savedValue !== '';
   const editable = !disabled && (options.allowEdit || (options.disableAutoGenerate && !saved));
@@ -93,6 +107,7 @@ export const getUuidInputState = ({ options, savedValue, disabled = false }) => 
     editable,
     canGenerate: editable,
     confirmReplace: saved,
+    generateOnMount: inComponent && !disabled && !saved && !options.disableAutoGenerate,
     placeholder: options.disableAutoGenerate ? 'enterManually' : 'generatedOnSave',
   };
 };

@@ -97,7 +97,7 @@ const bootstrap = async ({ strapi }) => {
   const componentFields = findComponentUuidFields(strapi);
   if (componentFields.length > 0) {
     strapi.log.warn(
-      `[strapi-auto-uuid] UUID fields inside components are not managed on the server (no generation, validation or repair): ${componentFields.join(', ')}. Add the field to the content type instead.`
+      `[strapi-auto-uuid] UUID fields inside components are filled by the admin panel only; the server does not generate, validate or repair them: ${componentFields.join(', ')}. Use a content-type field when duplicates must be rejected.`
     );
   }
 

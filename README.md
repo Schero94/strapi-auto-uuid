@@ -92,7 +92,7 @@ Set these when you add or edit the field in the Content-Type Builder.
 | Existing entry without a value                            | Filled on its next save.                                                                             |
 | Bulk `updateMany` that sets one UUID on several documents | Rejected with 400.                                                                                   |
 
-Rows of the same document (draft and published version, and the locales of a non-localized field) may share a value. Two documents may not. Under heavy concurrent writes of _client-supplied_ values, two creates can still race between the check and the insert, because Strapi has no database constraint for this field; generated v4/v7 values do not collide in practice. UUID fields inside components are not managed on the server; the plugin logs a warning when it finds one.
+Rows of the same document (draft and published version, and the locales of a non-localized field) may share a value. Two documents may not. Under heavy concurrent writes of _client-supplied_ values, two creates can still race between the check and the insert, because Strapi has no database constraint for this field; generated v4/v7 values do not collide in practice. UUID fields inside components and dynamic zones are filled by the admin panel when the component is shown with an empty value; the server does not generate, validate or repair them (API writes, cloned entries and duplicated components keep whatever value they carry). Use a content-type field when the value must be unique. The plugin logs a warning at startup when it finds such a field.
 
 Errors use Strapi's standard envelope, for example:
 

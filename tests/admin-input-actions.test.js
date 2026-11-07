@@ -92,8 +92,32 @@ describe('UUID Content Manager input state', () => {
       editable: false,
       canGenerate: false,
       confirmReplace: false,
+      generateOnMount: false,
       placeholder: 'generatedOnSave',
     });
+  });
+
+  it('fills empty fields inside components in the browser, never content-type fields', () => {
+    // Acceptance finding: the server does not manage component fields, so the
+    // "Generated when the entry is saved" promise was never kept for them.
+    expect(getUuidInputState({ options: opts(), savedValue: '' }).generateOnMount).toBe(false);
+    expect(
+      getUuidInputState({ options: opts(), savedValue: '', inComponent: true }).generateOnMount
+    ).toBe(true);
+    expect(
+      getUuidInputState({ options: opts(), savedValue: 'saved', inComponent: true }).generateOnMount
+    ).toBe(false);
+    expect(
+      getUuidInputState({
+        options: opts({ disableAutoGenerate: true }),
+        savedValue: '',
+        inComponent: true,
+      }).generateOnMount
+    ).toBe(false);
+    expect(
+      getUuidInputState({ options: opts(), savedValue: '', inComponent: true, disabled: true })
+        .generateOnMount
+    ).toBe(false);
   });
 
   it('lets a manual-entry field be filled once even when editing is off', () => {

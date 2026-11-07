@@ -46,6 +46,8 @@ const Input = forwardRef(function UuidInput(props, ref) {
   // The value the entry had when the form was opened.
   const [savedValue] = useState(value);
   const copiedTimer = useRef(null);
+  const generateButtonRef = useRef(null);
+  const generatedOnMount = useRef(false);
   useEffect(() => () => clearTimeout(copiedTimer.current), []);
 
   const version = attribute?.options?.['uuid-version'];
@@ -63,11 +65,23 @@ const Input = forwardRef(function UuidInput(props, ref) {
     [version, prefix, disableAutoGenerate, allowEdit]
   );
   const options = optionsResult.valid ? optionsResult.options : null;
+  // Fields inside components and dynamic zones have dotted names
+  // (`meta.blockId`, `blocks.0.blockId`). The server does not manage them, so
+  // the input fills them in the browser.
+  const inComponent = typeof name === 'string' && name.includes('.');
   const state = getUuidInputState({
     options,
-    savedValue: savedValue,
+    savedValue,
     disabled,
+    inComponent,
   });
+  const attributeType = attribute?.type;
+
+  useEffect(() => {
+    if (!state.generateOnMount || generatedOnMount.current || value) return;
+    generatedOnMount.current = true;
+    onChange({ target: { name, type: attributeType, value: generateUuidFieldValue(options) } });
+  }, [state.generateOnMount, value, onChange, name, attributeType, options]);
 
   const actions = createUuidInputActions({
     allowEdit: state.canGenerate,
@@ -106,6 +120,12 @@ const Input = forwardRef(function UuidInput(props, ref) {
     setIsCopied(true);
     clearTimeout(copiedTimer.current);
     copiedTimer.current = setTimeout(() => setIsCopied(false), 2000);
+  };
+
+  // The confirmation has no Dialog.Trigger, so focus is returned by hand.
+  const closeConfirm = () => {
+    setConfirmOpen(false);
+    setTimeout(() => generateButtonRef.current?.focus(), 0);
   };
 
   const handleGenerate = () => {
@@ -185,6 +205,7 @@ const Input = forwardRef(function UuidInput(props, ref) {
 
           {state.canGenerate && (
             <IconButton
+              ref={generateButtonRef}
               onClick={handleGenerate}
               disabled={!options}
               label={generateLabel}
@@ -200,7 +221,10 @@ const Input = forwardRef(function UuidInput(props, ref) {
         <Field.Error />
       </Flex>
 
-      <Dialog.Root open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <Dialog.Root
+        open={confirmOpen}
+        onOpenChange={(open) => (open ? setConfirmOpen(true) : closeConfirm())}
+      >
         <ConfirmDialog
           title={formatMessage({
             id: getTranslation('form.confirm.title'),
@@ -213,7 +237,7 @@ const Input = forwardRef(function UuidInput(props, ref) {
               variant="danger-light"
               onClick={() => {
                 actions.regenerate();
-                setConfirmOpen(false);
+                closeConfirm();
               }}
             >
               {formatMessage({

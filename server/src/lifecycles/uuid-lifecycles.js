@@ -9,6 +9,23 @@ import { isLocalizedAttribute } from '../utils/uuid-models.js';
 
 const { ValidationError, ApplicationError } = errors;
 
+/**
+ * Creates a ValidationError in the shape the admin forms read. The Content
+ * Manager maps `details.errors[].path` to a form field (`useAPIErrorHandler`
+ * `_unstableFormatValidationErrors`), so the message is shown under the UUID
+ * input. Without `errors` it calls `join()` on every other details key and
+ * throws. `field` and `code` stay for API clients.
+ *
+ * @param {string} message Error message.
+ * @param {{ field?: string, code: string }} details Error details.
+ * @returns {InstanceType<typeof ValidationError>} The error to throw.
+ */
+export const uuidValidationError = (message, details) =>
+  new ValidationError(message, {
+    ...details,
+    errors: details.field ? [{ path: [details.field], message, name: 'ValidationError' }] : [],
+  });
+
 const isEmpty = (value) => value === null || value === undefined || value === '';
 const sameValue = (a, b) => (isEmpty(a) && isEmpty(b)) || a === b;
 
@@ -55,7 +72,7 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
     try {
       return resolveUuidFieldOptions(attribute?.options || {}, config.defaultVersion);
     } catch (error) {
-      throw new ValidationError(
+      throw uuidValidationError(
         `Invalid UUID field configuration for '${field}': ${error.message}`,
         {
           field,
@@ -239,13 +256,13 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
       }
 
       if (!valid) {
-        throw new ValidationError(`Invalid UUID format for field '${field}'`, {
+        throw uuidValidationError(`Invalid UUID format for field '${field}'`, {
           field,
           code: 'INVALID_UUID',
         });
       }
       if (duplicate) {
-        throw new ValidationError(
+        throw uuidValidationError(
           `UUID already exists for field '${field}'. Please use a unique value.`,
           { field, code: 'DUPLICATE_UUID' }
         );
@@ -272,7 +289,7 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
       (await documentHolds(uid, field, newValue, documentId));
 
     if (!options.allowEdit && !copiesOwnValue && changedRows.some((row) => !isEmpty(row[field]))) {
-      throw new ValidationError(
+      throw uuidValidationError(
         `UUID field '${field}' is immutable. Enable manual editing in the field options to change it.`,
         { field, code: 'IMMUTABLE_UUID' }
       );
@@ -281,13 +298,13 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
     if (isEmpty(newValue) || copiesOwnValue) return;
 
     if (!isUuidFieldValue(newValue, options)) {
-      throw new ValidationError(`Invalid UUID format for field '${field}'`, {
+      throw uuidValidationError(`Invalid UUID format for field '${field}'`, {
         field,
         code: 'INVALID_UUID',
       });
     }
     if (await findOtherOwner(uid, field, newValue, documentId)) {
-      throw new ValidationError(
+      throw uuidValidationError(
         `UUID already exists for field '${field}'. Please use a unique value.`,
         { field, code: 'DUPLICATE_UUID' }
       );
@@ -299,7 +316,7 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
     for (const { field, attribute } of touched) {
       const options = getOptions(uid, field, attribute);
       if (!isEmpty(data[field]) && !isUuidFieldValue(data[field], options)) {
-        throw new ValidationError(`Invalid UUID format for field '${field}'`, {
+        throw uuidValidationError(`Invalid UUID format for field '${field}'`, {
           field,
           code: 'INVALID_UUID',
         });
@@ -353,7 +370,7 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
 
       const row = await loadTargets(uid, params.where, touched, false);
       if (!row) {
-        throw new ValidationError(
+        throw uuidValidationError(
           'Unable to verify the target entry for a UUID update. The update was rejected.',
           { code: 'UUID_TARGET_UNKNOWN' }
         );
@@ -403,7 +420,7 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
 
         const documentIds = new Set(rows.map((row) => row.documentId));
         if (documentIds.size > 1) {
-          throw new ValidationError(
+          throw uuidValidationError(
             `UUID field '${field}' cannot be set on several documents at once.`,
             { field, code: 'BULK_UUID_WRITE' }
           );

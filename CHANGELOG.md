@@ -26,6 +26,19 @@ row, and the admin page was reworked within the existing design.
 
 ### Fixed
 
+- Every locale of a cloned document gets the same value for a non-localized
+  UUID field. Document Service `clone({ locale: '*' })` creates the locale
+  rows concurrently and gave each locale its own value.
+- A duplicate value inside one `createMany` batch is rejected instead of being
+  replaced silently when the rows carry new documentIds.
+- Plugin validation errors now carry `details.errors[].path`, so the Content
+  Manager shows the message under the UUID field. Before, saving an invalid
+  value crashed the form error handler (`join is not a function`).
+- UUID fields inside components and dynamic zones are filled in the admin
+  panel again when the component is shown with an empty value. The server
+  does not manage these fields; the startup warning and README say so.
+- Focus returns to the generate button after the "Replace this UUID?"
+  confirmation is closed.
 - Saving an entry with a UUID field on SQLite no longer stalls until the
   connection timeout and fails: the update target is read inside the
   Document Service transaction.
