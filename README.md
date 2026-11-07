@@ -28,6 +28,7 @@ This is the Strapi 5 continuation of [Cringe-Studio/strapi-auto-uuid](https://gi
 - [Permissions](#permissions)
 - [Security](#security)
 - [Performance](#performance)
+- [Running several instances (Railway replicas, pm2 cluster)](#running-several-instances-railway-replicas-pm2-cluster)
 - [Upgrading from 1.x](#upgrading-from-1x)
 - [Upgrading from Strapi 4](#upgrading-from-strapi-4)
 - [Troubleshooting and FAQ](#troubleshooting-and-faq)
@@ -58,11 +59,11 @@ All screenshots use synthetic data.
 
 ## Requirements
 
-| Plugin version     | Strapi                                                                                  | Node.js                  | Database                                                    |
-| ------------------ | --------------------------------------------------------------------------------------- | ------------------------ | ----------------------------------------------------------- |
-| 2.x (next release) | 5.24 or newer, tested with 5.61                                                         | 22.12 or newer, up to 26 | Any database Strapi supports; the test suite runs on SQLite |
-| 1.x                | 5.x                                                                                     | as required by Strapi    | Any database Strapi supports                                |
-| Strapi 4           | use [Cringe-Studio/strapi-auto-uuid](https://github.com/Cringe-Studio/strapi-auto-uuid) |                          |                                                             |
+| Plugin version     | Strapi                                                                                  | Node.js                  | Database                                                                   |
+| ------------------ | --------------------------------------------------------------------------------------- | ------------------------ | -------------------------------------------------------------------------- |
+| 2.x (next release) | 5.24 or newer, tested with 5.61                                                         | 22.12 or newer, up to 26 | Any database Strapi supports; the test suite runs on SQLite and PostgreSQL |
+| 1.x                | 5.x                                                                                     | as required by Strapi    | Any database Strapi supports                                               |
+| Strapi 4           | use [Cringe-Studio/strapi-auto-uuid](https://github.com/Cringe-Studio/strapi-auto-uuid) |                          |                                                                            |
 
 ## Quick start
 
@@ -160,19 +161,21 @@ module.exports = {
       maxRetryAttempts: 3, // collision retries per generated value, integer 1-10
       autoMigrate: false, // repair empty, malformed and duplicate values on boot
       logLevel: 'info', // 'debug' | 'info' | 'warn' | 'error'
+      rateLimitStore: 'auto', // 'auto' | 'database' | 'memory'
     },
   },
 };
 ```
 
-| Option               | Type                                     | Default  | Description                                                                                           |
-| -------------------- | ---------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------- |
-| `defaultVersion`     | `'v4' \| 'v7'`                           | `'v4'`   | Version for fields that do not set one.                                                               |
-| `autoGenerate`       | boolean                                  | `true`   | Generate values on create and fill empty fields on save. Per field, **Disable auto-generation** wins. |
-| `validateUniqueness` | boolean                                  | `true`   | Reject a value that another document already uses.                                                    |
-| `maxRetryAttempts`   | integer, 1 to 10                         | `3`      | Retries when a generated value is already taken.                                                      |
-| `autoMigrate`        | boolean                                  | `false`  | Repair empty, malformed and duplicate values at startup (see below).                                  |
-| `logLevel`           | `'debug' \| 'info' \| 'warn' \| 'error'` | `'info'` | Minimum level of the plugin's log lines.                                                              |
+| Option               | Type                                     | Default  | Description                                                                                                                                                                                 |
+| -------------------- | ---------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `defaultVersion`     | `'v4' \| 'v7'`                           | `'v4'`   | Version for fields that do not set one.                                                                                                                                                     |
+| `autoGenerate`       | boolean                                  | `true`   | Generate values on create and fill empty fields on save. Per field, **Disable auto-generation** wins.                                                                                       |
+| `validateUniqueness` | boolean                                  | `true`   | Reject a value that another document already uses.                                                                                                                                          |
+| `maxRetryAttempts`   | integer, 1 to 10                         | `3`      | Retries when a generated value is already taken.                                                                                                                                            |
+| `autoMigrate`        | boolean                                  | `false`  | Repair empty, malformed and duplicate values at startup (see below).                                                                                                                        |
+| `logLevel`           | `'debug' \| 'info' \| 'warn' \| 'error'` | `'info'` | Minimum level of the plugin's log lines.                                                                                                                                                    |
+| `rateLimitStore`     | `'auto' \| 'database' \| 'memory'`       | `'auto'` | Where admin rate-limit counters live. `auto`: database on PostgreSQL and MySQL, memory on SQLite. See [Running several instances](#running-several-instances-railway-replicas-pm2-cluster). |
 
 `autoMigrate` writes data on every start. It is refused when `NODE_ENV=production` unless `STRAPI_AUTO_UUID_ALLOW_PRODUCTION_MIGRATE=true` is set, and it never replaces older-format values. `allowManualEdit` from 1.x is accepted but has no effect; use the per-field option.
 
@@ -193,7 +196,7 @@ All routes are admin routes under `/field-uuid` (for example `GET /field-uuid/st
 | `GET /migration/export`  | `export`            |                                                                   | JSON attachment with all mappings                          |
 | `POST /migration/import` | `import`            | `{ mappings, dryRun? }`                                           | Max. 10,000 entries, 100 content types, 20 fields per type |
 
-An import body must also fit Strapi's JSON body limit (`jsonLimit` of the `strapi::body` middleware, 1 MB by default), which holds roughly 9,000 to 11,000 entries depending on prefix and locale. The admin export already splits files to fit both limits. Diagnostic and repair responses never contain documentIds or UUID values; only the export does. A repair while another one runs returns 409. Rate limits per admin and minute: diagnose and repairs 5, migration run, export and import 3, status 10, stats 20.
+An import body must also fit Strapi's JSON body limit (`jsonLimit` of the `strapi::body` middleware, 1 MB by default), which holds roughly 9,000 to 11,000 entries depending on prefix and locale. The admin export already splits files to fit both limits. Diagnostic and repair responses never contain documentIds or UUID values; only the export does. A repair while another one runs, on any instance, returns 409. Rate limits per admin and minute (shared by all instances with the database store): diagnose and repairs 5, migration run, export and import 3, status 10, stats 20.
 
 ## Permissions
 
@@ -213,7 +216,7 @@ The settings link and each action are shown only to roles that have the permissi
 - Every admin route checks authentication and the plugin permission on the server; request bodies are validated with strict zod schemas.
 - Errors never contain stack traces, database errors or stored values. Logs contain the admin id for repairs, exports and imports (audit) but no values, IP addresses or request bodies.
 - Export holders see every documentId and UUID of every content type; the export is not filtered by Content Manager permissions, so grant it like a backup permission.
-- There is no database unique constraint (see [Performance](#performance) for an optional index). Two concurrent creates with the same client-supplied value can still race. The repair lock is per Node process; in a multi-replica deployment run repairs from one instance.
+- There is no database unique constraint: the draft, published and locale rows of one document share a value, so a plain unique index is not possible (see [Performance](#performance) for an optional lookup index). Concurrent writes from several processes are serialized with transaction-scoped database locks instead; see [Running several instances](#running-several-instances-railway-replicas-pm2-cluster).
 - Report security issues privately through [GitHub security advisories](https://github.com/Schero94/strapi-auto-uuid/security/advisories/new).
 
 ## Performance
@@ -248,6 +251,90 @@ module.exports = { up };
 ```
 
 The test suite runs this code on SQLite and checks that the lookup changes from `SCAN` to `SEARCH ... USING INDEX`.
+
+## Running several instances (Railway replicas, pm2 cluster)
+
+The plugin is safe when several Strapi processes share one database, for example 2 Railway replicas that each run 4 pm2 cluster workers (8 Node processes, no sticky sessions). The database is the only shared state; Redis or any other service is not needed.
+
+What is coordinated, and how:
+
+| Concern                                                         | Mechanism                                                                                                                                                                   |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Two processes save the same client-supplied UUID                | Before the uniqueness check, the save takes a lock on that value for the rest of its transaction. The second save waits, then sees the first and gets 400 `DUPLICATE_UUID`. |
+| Two processes fill the same empty, non-editable field           | The save locks that field of the document and reads the row again. The second save sees the stored value and gets 400 `IMMUTABLE_UUID`.                                     |
+| Repair or import started on two processes (also two clicks)     | The repair transaction takes a repair lock without waiting. The other process answers 409 `REPAIR_IN_PROGRESS`.                                                             |
+| `autoMigrate` on every booting process                          | Same repair lock: one process repairs, the others log `Boot repair skipped` and continue starting.                                                                          |
+| An editor changes a row between the repair's scan and its write | Every repair and import write is guarded by the expected old value. A write that matches no row is not counted and is reported as skipped (`CONCURRENT_CHANGE`).            |
+| Admin rate limits (`/migration/run`, export, import, ...)       | One counter per admin and route in the table `field_uuid_rate_limits`, incremented with one atomic upsert, so the limit holds across all processes.                         |
+
+Locks are transaction-scoped and released by the database on commit, rollback or a lost connection, so a crashed worker never leaves one behind:
+
+- **PostgreSQL** (recommended): advisory locks (`pg_advisory_xact_lock`, `pg_try_advisory_xact_lock`). No extra table.
+- **MySQL 8 / MariaDB** (not tested live yet): row locks (`SELECT ... FOR UPDATE [NOWAIT]`) on the plugin table `field_uuid_locks` (2,049 small rows, created at startup). Reads after a lock use `FOR UPDATE`, because MySQL's default REPEATABLE READ would otherwise return an older snapshot. Add the [lookup index](#performance) on each UUID column so these reads lock only matching rows.
+- **SQLite**: one writer per file, so writes are already serialized. Running several processes on one SQLite file is not supported by Strapi; use one process.
+
+Values are hashed into 1,024 lock buckets per kind, so a large import holds at most 1,024 locks. Server-generated random values take no lock. Writes that run outside a transaction (a bare `strapi.db.query().create()`) take no lock either; the Document Service, the Content Manager and the REST and GraphQL APIs always use a transaction.
+
+The plugin creates two tables at startup when they are missing: `field_uuid_rate_limits` (PostgreSQL and MySQL, or SQLite with `rateLimitStore: 'database'`) and `field_uuid_locks` (MySQL only). Strapi's schema sync leaves tables it did not create alone. Rate-limit keys are SHA-256 hashes; no admin id or IP address is stored. Rows expired for more than an hour are deleted on later requests.
+
+### Configuration
+
+Railway service variables (each replica):
+
+```bash
+DATABASE_CLIENT=postgres
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+NODE_ENV=production
+# Optional: only if autoMigrate should run on boot in production.
+# STRAPI_AUTO_UUID_ALLOW_PRODUCTION_MIGRATE=true
+```
+
+`config/plugins.js`:
+
+```js
+module.exports = {
+  'field-uuid': {
+    enabled: true,
+    config: {
+      rateLimitStore: 'auto', // 'database' on PostgreSQL and MySQL
+      autoMigrate: false, // recommended: run repairs from the admin page instead
+    },
+  },
+};
+```
+
+pm2 cluster mode needs a JavaScript entry point ([Strapi pm2 guide](https://docs.strapi.io/cms/deployment/guides/pm2)):
+
+```js
+// server.js
+const strapi = require('@strapi/strapi');
+strapi.createStrapi({ distDir: './dist' }).start(); // distDir for TypeScript projects
+```
+
+```js
+// ecosystem.config.js
+module.exports = {
+  apps: [
+    {
+      name: 'strapi',
+      script: './server.js',
+      exec_mode: 'cluster',
+      instances: 4,
+      env: { NODE_ENV: 'production' },
+    },
+  ],
+};
+```
+
+Size the database pool for all processes: `processes x pool max` (for example 8 x 10 = 80 with Strapi's default `pool.max`) must stay below the PostgreSQL `max_connections` of your plan, or lower `pool.max` in `config/database.js`.
+
+### Rolling deploys and schema changes
+
+Each process reads the UUID fields and their options once at startup. During a rolling deploy, old and new replicas run side by side: until every replica runs the new code, old ones do not generate or validate a newly added UUID field and apply the old field options. Nothing is lost (empty values are filled on the next save or by a repair, older-format values are kept). After a deploy that adds a UUID field or changes its options, wait until every replica is up, then run **Check** and **Repair all** (or **Generate missing**) once from the admin page.
+
+### Verify it
+
+`npm run test:concurrency` starts 8 Node processes against one database and races the cases above. Run it against PostgreSQL with `AUTO_UUID_PG_URL=postgres://user@host:5432/db npm run test:concurrency -- --client postgres`.
 
 ## Upgrading from 1.x
 
@@ -288,6 +375,8 @@ npm ci --legacy-peer-deps
 npm run lint          # ESLint 10 flat config
 npm run format:check  # Prettier
 npm test              # Vitest, including lifecycle and repair tests on a real SQLite database
+                      # (set AUTO_UUID_PG_URL to also run the PostgreSQL tests)
+npm run test:concurrency  # 8 processes on one database (SQLite, or PostgreSQL with --client postgres)
 npm run build         # strapi-plugin build + bundle checks (externals, chunk size)
 npm run verify        # strapi-plugin verify
 ```
