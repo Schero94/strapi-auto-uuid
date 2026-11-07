@@ -6,7 +6,7 @@
  * of UUID mappings. Each action is shown only to roles with the matching
  * permission; the server enforces the same permissions on every route.
  */
-import { forwardRef, useCallback, useEffect, useId, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 import { Alert, Badge, Box, Button, Checkbox, Flex, Grid, Typography } from '@strapi/design-system';
 import {
@@ -147,7 +147,28 @@ const SettingsPage = () => {
   const [optionsVersion, setOptionsVersion] = useState(0);
   const [dismissed, setDismissed] = useState({});
 
+  const refreshButtonRef = useRef(null);
   const t = (descriptor, values) => formatMessage(descriptor, values);
+
+  /**
+   * Runs a page action and puts focus back on its trigger. The trigger is
+   * disabled while the action runs, so the browser moves focus to the body.
+   * When the trigger is gone (the retry button of a dismissed alert), focus
+   * goes to the Refresh button.
+   *
+   * @param {React.SyntheticEvent} event Click event of the trigger.
+   * @param {() => Promise<void>} action Page action.
+   * @returns {Promise<void>}
+   */
+  const runKeepingFocus = async (event, action) => {
+    const trigger = event?.currentTarget ?? null;
+    await action();
+    setTimeout(() => {
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      (trigger?.isConnected ? trigger : refreshButtonRef.current)?.focus();
+    }, 0);
+  };
   const closeLabel = formatMessage({ id: getTranslation('common.close'), defaultMessage: 'Close' });
   const dismiss = (key) => () => setDismissed((prev) => ({ ...prev, [key]: true }));
 
@@ -310,9 +331,10 @@ const SettingsPage = () => {
         })}
         primaryAction={
           <Button
+            ref={refreshButtonRef}
             variant="secondary"
             startIcon={<ArrowClockwise aria-hidden />}
-            onClick={refresh}
+            onClick={(event) => runKeepingFocus(event, refresh)}
             loading={refreshing}
             disabled={anyPending && !refreshing}
           >
@@ -332,7 +354,12 @@ const SettingsPage = () => {
                 defaultMessage: 'The UUID status could not be loaded',
               })}
               action={
-                <Button variant="danger-light" size="S" onClick={refresh} loading={refreshing}>
+                <Button
+                  variant="danger-light"
+                  size="S"
+                  onClick={(event) => runKeepingFocus(event, refresh)}
+                  loading={refreshing}
+                >
                   {t({ id: getTranslation('common.retry'), defaultMessage: 'Try again' })}
                 </Button>
               }
@@ -502,7 +529,7 @@ const SettingsPage = () => {
                   <ActionCard
                     icon={Search}
                     tone="primary"
-                    onClick={runCheck}
+                    onClick={(event) => runKeepingFocus(event, runCheck)}
                     disabled={anyPending}
                     aria-busy={checking}
                     title={t({ id: getTranslation('actions.check'), defaultMessage: 'Run check' })}
@@ -689,7 +716,7 @@ const SettingsPage = () => {
                     <ActionCard
                       icon={Download}
                       tone="secondary"
-                      onClick={exportMappings}
+                      onClick={(event) => runKeepingFocus(event, exportMappings)}
                       disabled={anyPending}
                       aria-busy={exporting}
                       title={t({
