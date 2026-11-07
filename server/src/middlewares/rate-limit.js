@@ -1,22 +1,23 @@
 /**
- * Per-user in-memory rate limiter for expensive admin endpoints.
- * Identifies callers by ctx.state.user.id when available (admin JWT),
- * falling back to client IP. Small TTL map, resets on process restart.
+ * Per-user rate limiter for expensive admin endpoints.
+ *
+ * Callers are identified by ctx.state.user.id (admin JWT), falling back to
+ * the client IP. Counters use a fixed window. With the database store (the
+ * default on PostgreSQL and MySQL) every replica and pm2 worker shares one
+ * counter per user and route; with the memory store each process counts on
+ * its own. See `utils/rate-limit-store.js` and the `rateLimitStore` option.
  *
  * Config (route-level):
  *   { name: 'plugin::field-uuid.rate-limit', config: { max: 5, window: 60_000 } }
  */
-
-const buckets = new Map();
-
-const prune = (now) => {
-  for (const [key, entry] of buckets) {
-    if (entry.expiresAt <= now) buckets.delete(key);
-  }
-};
+import { hitRateLimit } from '../utils/rate-limit-store.js';
 
 /**
- * @param {{ max?: number, window?: number }} cfg
+ * Creates the rate-limit middleware.
+ *
+ * @param {{ max?: number, window?: number }} cfg Requests allowed per window (ms).
+ * @param {{ strapi: Object }} context Strapi context.
+ * @returns {(ctx: Object, next: Function) => Promise<void>} Koa middleware.
  */
 const rateLimit = (cfg = {}, { strapi }) => {
   const max = Number.isFinite(cfg.max) ? cfg.max : 10;
@@ -28,18 +29,10 @@ const rateLimit = (cfg = {}, { strapi }) => {
     const key = `${ctx.path}::${userId ? `u:${userId}` : `ip:${ip}`}`;
     const now = Date.now();
 
-    if (buckets.size > 5000) prune(now);
-
-    let entry = buckets.get(key);
-    if (!entry || entry.expiresAt <= now) {
-      entry = { count: 0, expiresAt: now + windowMs };
-      buckets.set(key, entry);
-    }
-
-    entry.count += 1;
+    const entry = await hitRateLimit(strapi, key, windowMs);
 
     if (entry.count > max) {
-      const retryAfterSec = Math.ceil((entry.expiresAt - now) / 1000);
+      const retryAfterSec = Math.max(1, Math.ceil((entry.expiresAt - now) / 1000));
       ctx.set('Retry-After', String(retryAfterSec));
       // Do not log the user id or IP address.
       strapi.log.warn(`[strapi-auto-uuid] Rate limit exceeded on ${ctx.path}`);

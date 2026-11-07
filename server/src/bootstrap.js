@@ -1,6 +1,8 @@
 import { normalizePluginConfig } from './config/index.js';
 import { createUuidLifecycles } from './lifecycles/uuid-lifecycles.js';
 import { findComponentUuidFields, getUuidModels } from './utils/uuid-models.js';
+import { prepareClusterLocks } from './utils/cluster-lock.js';
+import { prepareRateLimitStore } from './utils/rate-limit-store.js';
 import { resolveUuidFieldOptions } from '../../shared/uuid-field.js';
 
 /**
@@ -69,9 +71,14 @@ export const createLogger = (strapi, level) => {
 };
 
 /**
- * Plugin bootstrap: registers RBAC actions, subscribes the UUID lifecycle
- * hooks for every content type with a UUID field and, when enabled, runs the
- * boot-time repair.
+ * Plugin bootstrap: registers RBAC actions, prepares the shared rate-limit
+ * store and cross-process locks, subscribes the UUID lifecycle hooks for
+ * every content type with a UUID field and, when enabled, runs the boot-time
+ * repair.
+ *
+ * The boot repair runs in every process that boots, but only one at a time
+ * does work: the repair takes the cross-process repair lock without waiting,
+ * and a process that finds it taken skips its run.
  *
  * @param {{ strapi: Object }} context Strapi context.
  * @returns {Promise<void>}
@@ -85,6 +92,14 @@ const bootstrap = async ({ strapi }) => {
   resolveUuidFieldOptions({}, config.defaultVersion);
 
   await registerPluginPermissions(strapi);
+
+  // Shared state for several processes (replicas, pm2 workers) on one
+  // database: rate-limit counters and, on MySQL, the lock table.
+  const rateLimitStore = await prepareRateLimitStore(strapi, config.rateLimitStore, log);
+  const clusterLocks = await prepareClusterLocks(strapi, log);
+  log.debug(
+    `[strapi-auto-uuid] Rate-limit store: ${rateLimitStore}; cross-process locks: ${clusterLocks ? 'on' : 'off'}`
+  );
 
   const fieldNames = getUuidModels(strapi);
   const models = Object.fromEntries(
@@ -144,6 +159,10 @@ const bootstrap = async ({ strapi }) => {
         log.info('[strapi-auto-uuid] Boot repair: nothing to fix');
       }
     } catch (err) {
+      if (err?.code === 'REPAIR_IN_PROGRESS') {
+        log.info('[strapi-auto-uuid] Boot repair skipped: a repair is running on another instance');
+        return;
+      }
       strapi.log.error(`[strapi-auto-uuid] Boot repair failed (${err?.name || 'Error'})`);
     }
   });

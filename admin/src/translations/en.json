@@ -12,6 +12,7 @@
   "check.done": "Check finished.",
   "check.incomplete": "Check finished, but some fields could not be checked.",
   "check.lastRun": "Counts are from the check you just ran.",
+  "code.CONCURRENT_CHANGE": "An entry changed while the operation ran, for example on another server. It was skipped.",
   "code.DUPLICATE_TARGET": "An entry appears more than once in the file.",
   "code.DUPLICATE_VALUE": "A UUID appears more than once in the file.",
   "code.IMPORT_CONFLICT": "A UUID from the file is already used by another entry.",

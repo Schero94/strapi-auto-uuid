@@ -12,6 +12,7 @@
   "check.done": "Prüfung abgeschlossen.",
   "check.incomplete": "Prüfung abgeschlossen, aber einige Felder konnten nicht geprüft werden.",
   "check.lastRun": "Die Zahlen stammen aus der gerade ausgeführten Prüfung.",
+  "code.CONCURRENT_CHANGE": "Ein Eintrag wurde während des Vorgangs geändert, zum Beispiel auf einem anderen Server. Er wurde übersprungen.",
   "code.DUPLICATE_TARGET": "Ein Eintrag kommt in der Datei mehrfach vor.",
   "code.DUPLICATE_VALUE": "Eine UUID kommt in der Datei mehrfach vor.",
   "code.IMPORT_CONFLICT": "Eine UUID aus der Datei wird bereits von einem anderen Eintrag verwendet.",

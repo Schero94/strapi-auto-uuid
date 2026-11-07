@@ -54,6 +54,11 @@ export const CODE_MESSAGES = Object.freeze({
     id: getTranslation('code.DUPLICATE_VALUE'),
     defaultMessage: 'A UUID appears more than once in the file.',
   },
+  CONCURRENT_CHANGE: {
+    id: getTranslation('code.CONCURRENT_CHANGE'),
+    defaultMessage:
+      'An entry changed while the operation ran, for example on another server. It was skipped.',
+  },
   TARGET_NOT_FOUND: {
     id: getTranslation('code.TARGET_NOT_FOUND'),
     defaultMessage: 'An entry from the file no longer exists.',

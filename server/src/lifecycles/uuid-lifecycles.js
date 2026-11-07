@@ -6,6 +6,13 @@ import {
   resolveUuidFieldOptions,
   uuidValueSpellings,
 } from '../../../shared/uuid-field.js';
+import {
+  LOCK_SPACES,
+  documentLockKey,
+  getDialect,
+  lockKeys,
+  valueLockKey,
+} from '../utils/cluster-lock.js';
 import { isUuidRepairContext } from '../utils/repair-context.js';
 import { isLocalizedAttribute } from '../utils/uuid-models.js';
 
@@ -40,6 +47,18 @@ const sameValue = (a, b) => (isEmpty(a) && isEmpty(b)) || a === b;
  * used here: on SQLite the pool holds a single connection that the open
  * transaction already owns, so a raw query would wait until the acquire
  * timeout.
+ *
+ * Several processes (replicas, pm2 workers) may write at the same time. The
+ * uniqueness check and the write-once rule are therefore serialized with
+ * transaction-scoped database locks (see `utils/cluster-lock.js`), taken on
+ * the connection of the Document Service transaction:
+ * - before a client-supplied value is checked for uniqueness, a lock on that
+ *   value (field + canonical value);
+ * - before an empty, non-editable field is filled on update, a lock on that
+ *   field of the document, followed by a fresh read of the target rows.
+ * The second transaction waits until the first commits and then sees its
+ * row, so it rejects the duplicate instead of inserting it. Server-generated
+ * random values take no lock. Writes outside a transaction take no lock.
  *
  * Rules:
  * - Rows of the same document (draft and published version, and the locales
@@ -93,14 +112,52 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
    * part, so a case variant of an existing value counts as a duplicate on
    * every database (RFC 9562 treats UUIDs as case-insensitive).
    */
-  const findOtherOwner = async (uid, field, value, documentId) => {
+  const findOtherOwner = async (uid, field, value, documentId, latest = false) => {
     if (!config.validateUniqueness) return null;
     const spellings = uuidValueSpellings(value);
     const where = { [field]: spellings.length === 1 ? spellings[0] : { $in: spellings } };
     if (documentId) where.documentId = { $ne: documentId };
-    const row = await strapi.db.query(uid).findOne({ where, select: ['documentId'] });
+    const row = latest
+      ? await findOneLatest(uid, { where, select: ['documentId'] })
+      : await strapi.db.query(uid).findOne({ where, select: ['documentId'] });
     return row?.documentId ?? null;
   };
+
+  /**
+   * Whether reads after a lock must be locking reads. MySQL runs
+   * transactions in REPEATABLE READ, where a plain read returns the snapshot
+   * of the first read; `FOR UPDATE` returns the latest committed row.
+   * PostgreSQL runs READ COMMITTED, where each statement sees the latest
+   * committed rows. SQLite has a single writer.
+   */
+  const needsLockingRead = () => getDialect(strapi) === 'mysql' && strapi.db.inTransaction();
+
+  /** findMany that returns the latest committed rows (see needsLockingRead). */
+  const findManyLatest = (uid, query) =>
+    needsLockingRead()
+      ? strapi.db.queryBuilder(uid).init(query).forUpdate().execute()
+      : strapi.db.query(uid).findMany(query);
+
+  /** findOne that returns the latest committed row (see needsLockingRead). */
+  const findOneLatest = async (uid, query) =>
+    needsLockingRead()
+      ? ((
+          await strapi.db
+            .queryBuilder(uid)
+            .init({ ...query, limit: 1 })
+            .forUpdate()
+            .execute()
+        )?.[0] ?? null)
+      : strapi.db.query(uid).findOne(query);
+
+  /**
+   * Locks one value of a field until the transaction ends.
+   *
+   * @returns {Promise<boolean>} Whether a lock was taken.
+   */
+  const lockValue = async (uid, field, value) =>
+    config.validateUniqueness &&
+    lockKeys(strapi, LOCK_SPACES.value, [valueLockKey(uid, field, value)]);
 
   /** Returns whether any row of `documentId` (optionally except row `exceptId`) holds `value`. */
   const documentHolds = async (uid, field, value, documentId, exceptId) => {
@@ -245,9 +302,13 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
         }
       }
 
+      // A client-supplied value is claimed: serialize with other processes
+      // that claim the same value, then read the latest owner.
+      const latest = !serverGenerated && (await lockValue(uid, field, value));
+
       if (
         !isEmpty(sharedValue) &&
-        (serverGenerated || (await findOtherOwner(uid, field, value, documentId)))
+        (serverGenerated || (await findOtherOwner(uid, field, value, documentId, latest)))
       ) {
         data[field] = sharedValue;
         reserve(sharedValue);
@@ -267,7 +328,9 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
       // A duplicate inside the same batch is a client error, never a clone copy.
       const batchDuplicate = valid && reserved.has(`${field}\u0000${value}`);
       const ownedElsewhere =
-        valid && !batchDuplicate && Boolean(await findOtherOwner(uid, field, value, documentId));
+        valid &&
+        !batchDuplicate &&
+        Boolean(await findOtherOwner(uid, field, value, documentId, latest));
       const duplicate = batchDuplicate || ownedElsewhere;
 
       if (isClone && autoGenerate && (!valid || ownedElsewhere)) {
@@ -325,7 +388,8 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
         code: 'INVALID_UUID',
       });
     }
-    if (await findOtherOwner(uid, field, newValue, documentId)) {
+    const latest = await lockValue(uid, field, newValue);
+    if (await findOtherOwner(uid, field, newValue, documentId, latest)) {
       throw uuidValidationError(
         `UUID already exists for field '${field}'. Please use a unique value.`,
         { field, code: 'DUPLICATE_UUID' }
@@ -350,12 +414,33 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
    * Loads the rows targeted by an update through the transaction-aware
    * query engine.
    */
-  const loadTargets = (uid, where, touched, many) => {
+  const loadTargets = (uid, where, touched, many, latest = false) => {
     const query = {
       where: where || {},
       select: ['id', 'documentId', ...touched.map(({ field }) => field)],
     };
+    if (latest) return many ? findManyLatest(uid, query) : findOneLatest(uid, query);
     return many ? strapi.db.query(uid).findMany(query) : strapi.db.query(uid).findOne(query);
+  };
+
+  /**
+   * Locks the write-once fields of the target documents that are still
+   * empty, so two concurrent saves cannot both pass the "still empty" check.
+   *
+   * @param {string} uid Content type UID.
+   * @param {Array<{ field: string, attribute: Object }>} touched Fields in the update.
+   * @param {Array<Record<string, unknown>>} rows Target rows read without a lock.
+   * @returns {Promise<boolean>} Whether locks were taken; the caller must then read the rows again.
+   */
+  const lockWriteOnceFields = (uid, touched, rows) => {
+    const keys = [];
+    for (const { field, attribute } of touched) {
+      if (getOptions(uid, field, attribute).allowEdit) continue;
+      for (const row of rows) {
+        if (isEmpty(row[field])) keys.push(documentLockKey(uid, field, row.documentId));
+      }
+    }
+    return lockKeys(strapi, LOCK_SPACES.document, keys);
   };
 
   return {
@@ -390,7 +475,10 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
         return;
       }
 
-      const row = await loadTargets(uid, params.where, touched, false);
+      let row = await loadTargets(uid, params.where, touched, false);
+      if (row && (await lockWriteOnceFields(uid, touched, [row]))) {
+        row = await loadTargets(uid, params.where, touched, false, true);
+      }
       if (!row) {
         throw uuidValidationError(
           'Unable to verify the target entry for a UUID update. The update was rejected.',
@@ -438,7 +526,10 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
         return;
       }
 
-      const rows = await loadTargets(uid, params.where, touched, true);
+      let rows = await loadTargets(uid, params.where, touched, true);
+      if (rows.length > 0 && (await lockWriteOnceFields(uid, touched, rows))) {
+        rows = await loadTargets(uid, params.where, touched, true, true);
+      }
       if (rows.length === 0) return;
 
       for (const { field, attribute } of touched) {
