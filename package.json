@@ -1,16 +1,20 @@
 {
   "name": "strapi-auto-uuid-v5",
   "version": "2.1.0",
-  "description": "Strapi v5 plugin that automatically generates and manages UUID v4/v7 for your content types",
+  "description": "Strapi 5 custom field that generates UUID v4 or v7 values on the server, keeps them unique and locked, and adds admin tools to check, repair, export and import them.",
   "keywords": [
     "strapi",
     "strapi-plugin",
+    "strapi-5",
+    "strapi-v5",
+    "strapi-custom-field",
+    "custom-field",
     "uuid",
     "uuid-v4",
     "uuid-v7",
-    "strapi-v5",
-    "custom-field",
-    "unique-identifier"
+    "uuidv7",
+    "unique-identifier",
+    "content-type"
   ],
   "type": "commonjs",
   "exports": {
@@ -51,6 +55,7 @@
     "test:concurrency": "node --import ./scripts/esm-source-hooks.mjs scripts/concurrency-check.mjs"
   },
   "dependencies": {
+    "@strapi/utils": "^5.24.0",
     "uuid": "^14.0.3",
     "yup": "0.32.9",
     "zod": "^4.6.7"
@@ -69,7 +74,6 @@
     "@strapi/icons": "^2.2.4",
     "@strapi/sdk-plugin": "^6.1.1",
     "@strapi/strapi": "^5.61.0",
-    "@strapi/utils": "^5.61.0",
     "better-sqlite3": "^13.0.3",
     "eslint": "^10.14.0",
     "eslint-config-prettier": "^10.1.8",
@@ -89,12 +93,22 @@
     "@strapi/design-system": "^2.0.0",
     "@strapi/icons": "^2.0.0",
     "@strapi/strapi": "^5.24.0",
-    "@strapi/utils": "^5.24.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
     "react-intl": "^6.6.2",
     "react-router-dom": "^6.30.3",
     "styled-components": "^6.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@strapi/design-system": {
+      "optional": true
+    },
+    "@strapi/icons": {
+      "optional": true
+    },
+    "react-intl": {
+      "optional": true
+    }
   },
   "overrides": {
     "zod@4.4.3": "^4.6.7"
@@ -107,14 +121,14 @@
     "kind": "plugin",
     "name": "field-uuid",
     "displayName": "Auto UUID",
-    "description": "Automatically generates and manages UUID v4/v7 for your content types with admin panel tools"
+    "description": "Generates UUID v4 or v7 values for a custom field and adds tools to check, repair, export and import them"
   },
   "license": "MIT",
   "author": "Cringe Studio / Schero D. <schero1894@gmail.com>",
-  "homepage": "https://github.com/Schero94/strapi-auto-uuid#readme",
+  "homepage": "https://schero94.github.io/strapi-auto-uuid/",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Schero94/strapi-auto-uuid.git"
+    "url": "git+https://github.com/Schero94/strapi-auto-uuid.git"
   },
   "bugs": {
     "url": "https://github.com/Schero94/strapi-auto-uuid/issues"
