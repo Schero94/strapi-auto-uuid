@@ -55,3 +55,49 @@ td code {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Dark mode. site.css is shared and light only, so the page overrides its
+   tokens and the few hard-coded light colours here. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --ink: #e8ebf5;
+    --muted: #a7afc4;
+    --line: #2c3350;
+    --paper: #0f1222;
+    --white: #171b2e;
+  }
+  a {
+    color: #b4a6ff;
+  }
+  a:hover {
+    color: #d6ceff;
+  }
+  .side-nav a {
+    color: #c3c9db;
+  }
+  .side-nav a:hover {
+    background: #262a48;
+  }
+  .callout {
+    color: #d5dbea;
+    background: #12303a;
+  }
+  .callout.warning {
+    background: #3a2d12;
+  }
+  th {
+    color: #d5dbea;
+    background: #1d2238;
+  }
+  td {
+    color: #bcc3d6;
+  }
+  .link-list a {
+    background: var(--white);
+  }
+  .number {
+    color: #e2dcff;
+    background: #2e2560;
+  }
+}
