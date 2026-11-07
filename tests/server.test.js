@@ -91,7 +91,7 @@ describe('UUID generation service', () => {
     const generator = vi.mocked(uuid.v7).mockReturnValueOnce(first).mockReturnValueOnce(second);
     const { strapi } = makeStrapi({
       attributes: { [field]: uuidAttribute({ 'uuid-version': 'v7', 'uuid-prefix': 'art_' }) },
-      existing: (where) => (where[field] === `art_${first}` ? { id: 1 } : null),
+      existing: (where) => (where[field]?.$in?.includes(`art_${first}`) ? { id: 1 } : null),
     });
     const service = serviceFactory({ strapi });
 

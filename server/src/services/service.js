@@ -3,6 +3,7 @@ import {
   generateUuidFieldValue,
   isUuidFieldValue,
   resolveUuidFieldOptions,
+  uuidValueSpellings,
 } from '../../../shared/uuid-field.js';
 import { getPluginConfig } from '../config/index.js';
 import {
@@ -113,7 +114,8 @@ const service = ({ strapi }) => ({
     if (!isUuidFieldValue(uuid, this.getFieldOptions(contentType, field))) {
       return { exists: false, valid: false };
     }
-    const where = { [field]: uuid };
+    // Case variants of the UUID part are the same identifier (RFC 9562).
+    const where = { [field]: { $in: uuidValueSpellings(uuid) } };
     if (excludeDocumentId) where.documentId = { $ne: excludeDocumentId };
     const existing = await strapi.db.query(contentType).findOne({ where, select: ['id'] });
     return { exists: Boolean(existing), valid: true };
@@ -135,7 +137,7 @@ const service = ({ strapi }) => ({
       const value = generateUuidFieldValue(options);
       if (reserved?.has(value)) continue;
       const existing = await strapi.db.query(uid).findOne({
-        where: { [field]: value },
+        where: { [field]: { $in: uuidValueSpellings(value) } },
         select: ['id'],
       });
       if (!existing) return value;

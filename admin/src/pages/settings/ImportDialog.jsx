@@ -42,7 +42,8 @@ export const ImportDialog = ({ trigger, onApplied, onPendingChange, disabled }) 
       setFileError(
         formatMessage({
           id: getTranslation('import.file.tooLarge'),
-          defaultMessage: 'The file is larger than 1 MB. Split the export by content type.',
+          defaultMessage:
+            'The file is larger than 1 MB. Export again: the export is split into files that can be imported.',
         })
       );
       return;

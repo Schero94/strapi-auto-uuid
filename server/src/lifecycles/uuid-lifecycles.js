@@ -1,8 +1,10 @@
 import { errors } from '@strapi/utils';
 import {
+  canonicalUuidValue,
   generateUuidFieldValue,
   isUuidFieldValue,
   resolveUuidFieldOptions,
+  uuidValueSpellings,
 } from '../../../shared/uuid-field.js';
 import { isUuidRepairContext } from '../utils/repair-context.js';
 import { isLocalizedAttribute } from '../utils/uuid-models.js';
@@ -51,6 +53,9 @@ const sameValue = (a, b) => (isEmpty(a) && isEmpty(b)) || a === b;
  *   later locales of a multi-locale clone reuse the value of the first one
  *   for non-localized fields. Duplicates inside one batch are rejected.
  * - Any other create with a value used by another document is rejected.
+ * - New and changed values are stored in canonical form (UUID part in
+ *   lowercase, prefix unchanged). Uniqueness checks also match the uppercase
+ *   spelling, so a case variant of another document's value is a duplicate.
  * - On update, an unchanged value is always accepted, even when it no longer
  *   matches the current version or prefix. Changes are validated, must be
  *   unique and are only allowed for fields with "Allow manual editing" or
@@ -82,10 +87,16 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
     }
   };
 
-  /** Returns the documentId of another document holding `value`, or null. */
+  /**
+   * Returns the documentId of another document holding `value`, or null.
+   * The lookup also matches the lowercase and uppercase spelling of the UUID
+   * part, so a case variant of an existing value counts as a duplicate on
+   * every database (RFC 9562 treats UUIDs as case-insensitive).
+   */
   const findOtherOwner = async (uid, field, value, documentId) => {
     if (!config.validateUniqueness) return null;
-    const where = { [field]: value };
+    const spellings = uuidValueSpellings(value);
+    const where = { [field]: spellings.length === 1 ? spellings[0] : { $in: spellings } };
     if (documentId) where.documentId = { $ne: documentId };
     const row = await strapi.db.query(uid).findOne({ where, select: ['documentId'] });
     return row?.documentId ?? null;
@@ -190,7 +201,7 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
       const options = getOptions(uid, field, attribute);
       const autoGenerate = config.autoGenerate && !options.disableAutoGenerate;
       const serverGenerated = autoGenerate && !options.allowEdit && !isUuidRepairContext();
-      const value = data[field];
+      let value = data[field];
       const reserve = (v) => reserved.add(`${field}\u0000${v}`);
       const shared = Boolean(documentId) && !isLocalizedAttribute(attribute);
       const generate = () =>
@@ -221,6 +232,17 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
       if (documentId && (await documentHolds(uid, field, value, documentId))) {
         reserve(value);
         continue;
+      }
+
+      // New values are stored in canonical form: the UUID part in lowercase.
+      const canonical = canonicalUuidValue(value);
+      if (canonical !== value) {
+        value = canonical;
+        data[field] = canonical;
+        if (documentId && (await documentHolds(uid, field, value, documentId))) {
+          reserve(value);
+          continue;
+        }
       }
 
       if (
@@ -385,6 +407,11 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
           data[field] = await generateUnique(uid, field, options);
           continue;
         }
+        // A changed value is stored in canonical form (lowercase UUID part).
+        // An unchanged value is kept exactly as stored.
+        if (!isEmpty(data[field]) && data[field] !== row[field]) {
+          data[field] = canonicalUuidValue(data[field]);
+        }
 
         await assertChangeAllowed({
           uid,
@@ -415,6 +442,8 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
       if (rows.length === 0) return;
 
       for (const { field, attribute } of touched) {
+        if (rows.every((row) => sameValue(row[field], data[field]))) continue;
+        if (!isEmpty(data[field])) data[field] = canonicalUuidValue(data[field]);
         const newValue = data[field];
         if (rows.every((row) => sameValue(row[field], newValue))) continue;
 

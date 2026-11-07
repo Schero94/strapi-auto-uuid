@@ -1,4 +1,4 @@
-import { resolveUuidFieldOptions } from '../../../shared/uuid-field.js';
+import { canonicalUuidValue, resolveUuidFieldOptions } from '../../../shared/uuid-field.js';
 
 export const UUID_CUSTOM_FIELD = 'plugin::field-uuid.uuid';
 
@@ -120,6 +120,10 @@ export async function fetchFieldRows(strapi, uid, field, where = {}) {
  * count as duplicates. Documents are listed by their lowest row id, so the
  * oldest document is first and keeps its value during a repair.
  *
+ * Values are compared in canonical form (UUID part in lowercase), so
+ * `0A1B...` and `0a1b...` held by two documents are one duplicate group.
+ * `uuid` is the canonical value of the group.
+ *
  * @param {Array<Record<string, unknown>>} rows Rows from {@link fetchFieldRows}.
  * @param {string} field UUID field name.
  * @returns {Array<{ uuid: string, count: number, documentIds: string[] }>} Duplicate groups.
@@ -127,8 +131,9 @@ export async function fetchFieldRows(strapi, uid, field, where = {}) {
 export function groupDuplicates(rows, field) {
   const groups = new Map();
   for (const row of rows) {
-    const value = row[field];
-    if (value === null || value === undefined || value === '') continue;
+    const raw = row[field];
+    if (raw === null || raw === undefined || raw === '') continue;
+    const value = canonicalUuidValue(raw);
     let owners = groups.get(value);
     if (!owners) {
       owners = new Map();

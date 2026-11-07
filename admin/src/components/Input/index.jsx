@@ -2,7 +2,8 @@ import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 import { Box, Button, Dialog, Field, Flex, IconButton, TextInput } from '@strapi/design-system';
 import { ArrowClockwise, Check, Duplicate } from '@strapi/icons';
-import { ConfirmDialog, useClipboard, useNotification } from '@strapi/strapi/admin';
+import { ConfirmDialog, useClipboard, useForm, useNotification } from '@strapi/strapi/admin';
+import { useMatch } from 'react-router-dom';
 import {
   generateUuidFieldValue,
   isUuidFieldValue,
@@ -12,6 +13,16 @@ import { getTranslation } from '../../utils/getTranslation';
 import { createUuidInputActions, getUuidInputState } from './actions.js';
 
 const MONO_STYLE = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' };
+
+// The Content Manager clone page (same pattern as CLONE_PATH in
+// @strapi/content-manager/admin/src/router).
+const CLONE_PATH = '/content-manager/:collectionType/:slug/clone/:origin';
+
+/** Reads a dotted form path (`meta.blockId`, `blocks.0.blockId`). */
+const getIn = (object, path) =>
+  String(path)
+    .split('.')
+    .reduce((current, key) => (current == null ? undefined : current[key]), object);
 
 /**
  * Content Manager input for the UUID custom field.
@@ -43,11 +54,17 @@ const Input = forwardRef(function UuidInput(props, ref) {
   const { toggleNotification } = useNotification();
   const [isCopied, setIsCopied] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  // The value the entry had when the form was opened.
-  const [savedValue] = useState(value);
+  // The value the form was loaded with. Strapi's form updates
+  // `initialValues` after a save, so the confirmation before replacing a
+  // saved value keeps working without a reload. Outside a Strapi form (no
+  // context) the value at mount is used.
+  const [mountValue] = useState(value);
+  const initialValues = useForm('UuidInput', (form) => form.initialValues, false);
+  const savedValue = initialValues ? getIn(initialValues, name) : mountValue;
+  const isClone = Boolean(useMatch(CLONE_PATH));
   const copiedTimer = useRef(null);
   const generateButtonRef = useRef(null);
-  const generatedOnMount = useRef(false);
+  const handledOnMount = useRef(false);
   useEffect(() => () => clearTimeout(copiedTimer.current), []);
 
   const version = attribute?.options?.['uuid-version'];
@@ -72,16 +89,23 @@ const Input = forwardRef(function UuidInput(props, ref) {
   const state = getUuidInputState({
     options,
     savedValue,
+    value,
     disabled,
     inComponent,
+    isClone,
   });
   const attributeType = attribute?.type;
 
   useEffect(() => {
-    if (!state.generateOnMount || generatedOnMount.current || value) return;
-    generatedOnMount.current = true;
-    onChange({ target: { name, type: attributeType, value: generateUuidFieldValue(options) } });
-  }, [state.generateOnMount, value, onChange, name, attributeType, options]);
+    if (handledOnMount.current) return;
+    if (state.clearOnMount) {
+      handledOnMount.current = true;
+      onChange({ target: { name, type: attributeType, value: null } });
+    } else if (state.generateOnMount) {
+      handledOnMount.current = true;
+      onChange({ target: { name, type: attributeType, value: generateUuidFieldValue(options) } });
+    }
+  }, [state.clearOnMount, state.generateOnMount, onChange, name, attributeType, options]);
 
   const actions = createUuidInputActions({
     allowEdit: state.canGenerate,

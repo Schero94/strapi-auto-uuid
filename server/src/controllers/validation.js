@@ -8,11 +8,16 @@ import { errors } from '@strapi/utils';
 
 const { ValidationError } = errors;
 
-/** Upper bounds that keep imports well inside the default 1 MB JSON body limit. */
+/**
+ * Upper bounds for one import. The request body must also fit Strapi's JSON
+ * body limit (`strapi::body` `jsonLimit`, 1 MB by default), which holds about
+ * 9,000 to 11,000 compact entries. The admin export is split into parts that
+ * respect both limits (admin/src/utils/exportParts.js).
+ */
 export const IMPORT_LIMITS = Object.freeze({
   contentTypes: 100,
   fieldsPerContentType: 20,
-  totalEntries: 50_000,
+  totalEntries: 10_000,
   documentIdLength: 64,
   localeLength: 32,
   // 16-character prefix + 36-character UUID.

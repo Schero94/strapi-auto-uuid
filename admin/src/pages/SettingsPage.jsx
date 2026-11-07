@@ -22,6 +22,7 @@ import {
 import { Layouts, Page, useFetchClient, useNotification, useRBAC } from '@strapi/strapi/admin';
 import { PLUGIN_ID } from '../pluginId';
 import { getTranslation } from '../utils/getTranslation';
+import { splitExport } from '../utils/exportParts';
 import { ALL_PERMISSIONS } from '../utils/permissions';
 import { countChanges, describeError } from '../utils/report';
 import { ImportDialog } from './settings/ImportDialog';
@@ -214,7 +215,7 @@ const SettingsPage = () => {
   const runCheck = async () => {
     setChecking(true);
     try {
-      await get(`/${PLUGIN_ID}/diagnose`);
+      // /stats runs the full scan once and returns every count the page shows.
       const data = await loadStats();
       setChecked(true);
       toggleNotification({
@@ -256,21 +257,40 @@ const SettingsPage = () => {
     setExporting(true);
     try {
       const { data } = await get(`/${PLUGIN_ID}/migration/export`);
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `uuid-mappings-${new Date().toISOString().slice(0, 10)}.json`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      // Compact JSON, split into parts the Import dialog accepts (1 MB and
+      // 10,000 values per import).
+      const parts = splitExport(data);
+      const date = new Date().toISOString().slice(0, 10);
+      for (const [index, json] of parts.entries()) {
+        if (index > 0) await new Promise((resolve) => setTimeout(resolve, 400));
+        const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download =
+          parts.length === 1
+            ? `uuid-mappings-${date}.json`
+            : `uuid-mappings-${date}-part-${index + 1}-of-${parts.length}.json`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+      }
       toggleNotification({
         type: 'success',
-        message: t({
-          id: getTranslation('export.done'),
-          defaultMessage: 'UUID mappings exported.',
-        }),
+        message:
+          parts.length === 1
+            ? t({
+                id: getTranslation('export.done'),
+                defaultMessage: 'UUID mappings exported.',
+              })
+            : t(
+                {
+                  id: getTranslation('export.doneParts'),
+                  defaultMessage:
+                    'UUID mappings exported in {count} files. Import them one at a time.',
+                },
+                { count: parts.length }
+              ),
       });
     } catch (err) {
       toggleNotification({ type: 'danger', message: t(describeError(err)) });

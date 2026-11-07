@@ -93,8 +93,65 @@ describe('UUID Content Manager input state', () => {
       canGenerate: false,
       confirmReplace: false,
       generateOnMount: false,
+      clearOnMount: false,
       placeholder: 'generatedOnSave',
     });
+  });
+
+  it('RA-1: treats a value copied onto the clone page as unsaved and clears it', () => {
+    // Manual entry, editing off: before the fix the copied value was read-only
+    // and the clone could never be saved (400 DUPLICATE_UUID).
+    const manual = opts({ disableAutoGenerate: true });
+    const clone = getUuidInputState({
+      options: manual,
+      savedValue: 'source-value',
+      value: 'source-value',
+      isClone: true,
+    });
+    expect(clone).toMatchObject({
+      editable: true,
+      confirmReplace: false,
+      clearOnMount: true,
+      generateOnMount: false,
+    });
+    // Auto-generated content-type field: cleared, the server generates on save.
+    expect(
+      getUuidInputState({ options: opts(), savedValue: 'x', value: 'x', isClone: true })
+    ).toMatchObject({ clearOnMount: true, generateOnMount: false, editable: false });
+    // Auto-generated component field: a new value is generated in the browser.
+    expect(
+      getUuidInputState({
+        options: opts(),
+        savedValue: 'x',
+        value: 'x',
+        isClone: true,
+        inComponent: true,
+      })
+    ).toMatchObject({ clearOnMount: false, generateOnMount: true });
+    // Nothing to clear on an empty clone, and never while the form is disabled.
+    expect(
+      getUuidInputState({ options: manual, savedValue: '', value: '', isClone: true }).clearOnMount
+    ).toBe(false);
+    expect(
+      getUuidInputState({ options: manual, value: 'x', isClone: true, disabled: true }).clearOnMount
+    ).toBe(false);
+    // The edit page of an existing entry keeps its value.
+    expect(getUuidInputState({ options: manual, savedValue: 'x', value: 'x' })).toMatchObject({
+      clearOnMount: false,
+      editable: false,
+    });
+  });
+
+  it('RA-6: asks again after a save because the saved value follows the form', () => {
+    // The Input passes Strapi form initialValues as savedValue; after a save
+    // they hold the new value, so the next replacement asks again.
+    const editable = opts({ allowEdit: true });
+    const afterSave = getUuidInputState({
+      options: editable,
+      savedValue: 'new-saved',
+      value: 'new-saved',
+    });
+    expect(afterSave.confirmReplace).toBe(true);
   });
 
   it('fills empty fields inside components in the browser, never content-type fields', () => {

@@ -14,7 +14,11 @@
  * an editor changed after the preview are never overwritten with a stale plan.
  */
 
-import { classifyUuidFieldValue } from '../../../shared/uuid-field.js';
+import {
+  canonicalUuidValue,
+  classifyUuidFieldValue,
+  uuidValueSpellings,
+} from '../../../shared/uuid-field.js';
 import { getPluginConfig } from '../config/index.js';
 import { withUuidRepairContext } from '../utils/repair-context.js';
 import { runExclusiveRepair } from '../utils/repair-lock.js';
@@ -22,11 +26,14 @@ import {
   fetchFieldRows,
   getUuidModels,
   groupDuplicates,
+  isLocalizedAttribute,
   resolveFieldOptions,
 } from '../utils/uuid-models.js';
 
 export const EXPORT_FORMAT = 2;
 export const MAX_REPORTED_ERRORS = 20;
+/** Entries looked up per batched query during an import. */
+export const IMPORT_LOOKUP_CHUNK = 500;
 
 const isEmpty = (value) => value === null || value === undefined || value === '';
 const EMPTY_WHERE = (field) => ({ $or: [{ [field]: { $null: true } }, { [field]: '' }] });
@@ -87,32 +94,45 @@ function createErrorCollector() {
 /**
  * Analyses the rows of one UUID field.
  *
+ * A "unit" is the set of rows that must hold the same value: all rows of a
+ * document for a non-localized field (locales, draft and published), or the
+ * draft and published row of one locale for a localized field. This mirrors
+ * the lifecycle hooks, which give every locale of a localized field its own
+ * value. Repairs never copy a value from one unit to another.
+ *
  * @param {Array<Record<string, unknown>>} rows Rows from fetchFieldRows.
  * @param {string} field UUID field name.
  * @param {{ version: string, prefix: string, disableAutoGenerate: boolean }} options Field options.
- * @returns {Object} Counts and the per-document data needed to plan a repair.
+ * @param {{ localized?: boolean }} [shape] Whether the field has a value per locale.
+ * @returns {Object} Counts and the per-unit data needed to plan a repair.
  */
-export function analyseFieldRows(rows, field, options) {
-  const documents = new Map();
+export function analyseFieldRows(rows, field, options, { localized = false } = {}) {
+  const units = new Map();
+  const byDocument = new Map();
   for (const row of rows) {
-    let doc = documents.get(row.documentId);
-    if (!doc) {
-      doc = { firstId: row.id, values: new Set(), hasEmpty: false };
-      documents.set(row.documentId, doc);
+    const key = localized ? `${row.documentId}\u0000${row.locale ?? ''}` : row.documentId;
+    let unit = units.get(key);
+    if (!unit) {
+      unit = { key, documentId: row.documentId, values: new Set(), hasEmpty: false };
+      if (localized && !isEmpty(row.locale)) unit.locale = row.locale;
+      units.set(key, unit);
+      const keys = byDocument.get(row.documentId);
+      if (keys) keys.push(key);
+      else byDocument.set(row.documentId, [key]);
     }
-    if (isEmpty(row[field])) doc.hasEmpty = true;
-    else doc.values.add(row[field]);
+    if (isEmpty(row[field])) unit.hasEmpty = true;
+    else unit.values.add(row[field]);
   }
 
   const malformed = [];
   const legacy = [];
-  const emptyDocuments = [];
-  for (const [documentId, doc] of documents) {
-    if (doc.hasEmpty) emptyDocuments.push(documentId);
-    for (const value of doc.values) {
+  const emptyUnits = [];
+  for (const unit of units.values()) {
+    if (unit.hasEmpty) emptyUnits.push(unit);
+    for (const value of unit.values) {
       const kind = classifyUuidFieldValue(value, options);
-      if (kind === 'malformed') malformed.push({ documentId, value });
-      if (kind === 'legacy') legacy.push({ documentId, value });
+      if (kind === 'malformed') malformed.push({ unit, value });
+      if (kind === 'legacy') legacy.push({ unit, value });
     }
   }
 
@@ -120,20 +140,32 @@ export function analyseFieldRows(rows, field, options) {
   const manual = options.disableAutoGenerate;
 
   return {
-    documents,
-    entryCount: documents.size,
-    emptyCount: manual ? 0 : emptyDocuments.length,
-    manualEmptyCount: manual ? emptyDocuments.length : 0,
+    units,
+    byDocument,
+    entryCount: byDocument.size,
+    emptyCount: manual ? 0 : emptyUnits.length,
+    manualEmptyCount: manual ? emptyUnits.length : 0,
     invalidCount: malformed.length,
     legacyCount: legacy.length,
     duplicateCount: duplicates.reduce((sum, group) => sum + group.count - 1, 0),
     duplicateGroups: duplicates.length,
-    emptyDocuments: manual ? [] : emptyDocuments,
+    emptyUnits: manual ? [] : emptyUnits,
     malformed,
     legacy,
     duplicates,
   };
 }
+
+/**
+ * Builds the query-engine filter for the rows of one unit.
+ *
+ * @param {{ documentId: string, locale?: string }} unit Unit from analyseFieldRows.
+ * @returns {Array<Object>} `$and` conditions.
+ */
+const unitWhere = (unit) =>
+  unit.locale === undefined
+    ? [{ documentId: unit.documentId }]
+    : [{ documentId: unit.documentId }, { locale: unit.locale }];
 
 const migrations = ({ strapi }) => {
   const getOptions = (uid, field) =>
@@ -156,7 +188,13 @@ const migrations = ({ strapi }) => {
         try {
           const options = getOptions(uid, field);
           const rows = await fetchFieldRows(strapi, uid, field);
-          fields.push({ uid, field, options, analysis: analyseFieldRows(rows, field, options) });
+          const localized = isLocalizedAttribute(strapi.contentTypes[uid]?.attributes?.[field]);
+          fields.push({
+            uid,
+            field,
+            options,
+            analysis: analyseFieldRows(rows, field, options, { localized }),
+          });
         } catch (error) {
           failures.push({ uid, field, ...safeFieldFailure(error) });
         }
@@ -177,17 +215,23 @@ const migrations = ({ strapi }) => {
     for (const { uid, field, options, analysis } of fields) {
       const reserved = new Set();
       const handled = new Set();
+      // `${unit.key}\u0000${oldValue}` -> new value, for the empty-field step.
       const replacements = new Map();
       const query = strapi.db.query(uid);
 
-      const replace = async (type, documentId, oldValue, newValue, extra = {}) => {
-        result.changes.push({ type, uid, field, documentId, oldValue, newValue, ...extra });
+      const replace = async (type, unit, oldValue, newValue, extra = {}) => {
+        const change = { type, uid, field, documentId: unit.documentId, oldValue, newValue };
+        if (unit.locale !== undefined) change.locale = unit.locale;
+        result.changes.push({ ...change, ...extra });
         if (!write) return;
         try {
           await query.updateMany({
-            where: isEmpty(oldValue)
-              ? { $and: [{ documentId }, EMPTY_WHERE(field)] }
-              : { documentId, [field]: oldValue },
+            where: {
+              $and: [
+                ...unitWhere(unit),
+                isEmpty(oldValue) ? EMPTY_WHERE(field) : { [field]: oldValue },
+              ],
+            },
             data: { [field]: newValue },
           });
         } catch {
@@ -205,51 +249,64 @@ const migrations = ({ strapi }) => {
         }
       };
 
-      const replaceList = async (list, type, category) => {
-        for (const { documentId, value } of list) {
-          const key = `${documentId}\u0000${value}`;
-          if (handled.has(key)) continue;
-          handled.add(key);
-          const next = await fresh();
-          replacements.set(key, next);
-          await replace(type, documentId, value, next);
-          result.fixed[category] += 1;
-        }
+      const replaceValue = async (unit, value, type, category, extra) => {
+        const key = `${unit.key}\u0000${value}`;
+        if (handled.has(key)) return;
+        handled.add(key);
+        const next = await fresh();
+        replacements.set(key, next);
+        await replace(type, unit, value, next, extra);
+        result.fixed[category] += 1;
       };
 
-      if (flags.fixInvalid) await replaceList(analysis.malformed, 'invalid_fix', 'invalid');
-      if (flags.fixLegacy) await replaceList(analysis.legacy, 'legacy_fix', 'legacy');
+      if (flags.fixInvalid) {
+        for (const { unit, value } of analysis.malformed) {
+          await replaceValue(unit, value, 'invalid_fix', 'invalid');
+        }
+      }
+      if (flags.fixLegacy) {
+        for (const { unit, value } of analysis.legacy) {
+          await replaceValue(unit, value, 'legacy_fix', 'legacy');
+        }
+      }
 
       if (flags.fixDuplicates) {
         for (const group of analysis.duplicates) {
           const [kept, ...others] = group.documentIds;
           for (const documentId of others) {
-            const key = `${documentId}\u0000${group.uuid}`;
-            if (handled.has(key)) continue;
-            handled.add(key);
-            const next = await fresh();
-            replacements.set(key, next);
-            await replace('duplicate_fix', documentId, group.uuid, next, {
-              keptDocumentId: kept,
-            });
-            result.fixed.duplicates += 1;
+            // Every spelling of the value held by the document (draft,
+            // published, locales) is replaced; one new value per unit.
+            for (const key of analysis.byDocument.get(documentId) ?? []) {
+              const unit = analysis.units.get(key);
+              for (const value of unit.values) {
+                if (canonicalUuidValue(value) !== group.uuid) continue;
+                await replaceValue(unit, value, 'duplicate_fix', 'duplicates', {
+                  keptDocumentId: kept,
+                });
+              }
+            }
           }
         }
       }
 
       if (flags.fixEmpty) {
-        for (const documentId of analysis.emptyDocuments) {
-          // Reuse the document's own value (for example a draft that has a
-          // value while the published row predates the field) when it has
-          // exactly one, taking a replacement made above into account.
-          const own = [...analysis.documents.get(documentId).values].map(
-            (value) => replacements.get(`${documentId}\u0000${value}`) ?? value
-          );
+        for (const unit of analysis.emptyUnits) {
+          // Reuse the unit's own value (for example a draft that has a value
+          // while the published row predates the field) when it has exactly
+          // one, taking a replacement made above into account. A value is
+          // never taken from another locale of a localized field.
+          const own = [
+            ...new Set(
+              [...unit.values].map(
+                (value) => replacements.get(`${unit.key}\u0000${value}`) ?? value
+              )
+            ),
+          ];
           const reusable =
             own.length === 1 && classifyUuidFieldValue(own[0], options) !== 'malformed'
               ? own[0]
               : null;
-          await replace('empty_fix', documentId, null, reusable ?? (await fresh()));
+          await replace('empty_fix', unit, null, reusable ?? (await fresh()));
           result.fixed.empty += 1;
         }
       }
@@ -274,10 +331,13 @@ const migrations = ({ strapi }) => {
         issues: failures.map(({ uid, field, code, message }) => ({ uid, field, code, message })),
       };
 
+      // Entries are documents, counted once per content type even when it
+      // has several UUID fields (each field scans the same documents).
+      const entriesPerType = new Map();
       for (const { uid, field, analysis } of fields) {
         const { entryCount, emptyCount, manualEmptyCount, invalidCount, legacyCount } = analysis;
         const { duplicateCount, duplicateGroups } = analysis;
-        report.totalEntries += entryCount;
+        entriesPerType.set(uid, Math.max(entriesPerType.get(uid) ?? 0, entryCount));
         if (emptyCount > 0 || invalidCount > 0 || duplicateCount > 0) report.needsMigration = true;
         report.contentTypes.push({
           uid,
@@ -294,6 +354,7 @@ const migrations = ({ strapi }) => {
       for (const { uid, field, code, message } of failures) {
         report.contentTypes.push({ uid, field, scanFailed: true, code, error: message });
       }
+      report.totalEntries = [...entriesPerType.values()].reduce((sum, count) => sum + count, 0);
       return report;
     },
 
@@ -464,17 +525,19 @@ const migrations = ({ strapi }) => {
               continue;
             }
             const options = service.getFieldOptions(uid, field);
+            const hasLocale = Boolean(strapi.contentTypes?.[uid]?.attributes?.locale);
             const seenValues = new Map();
             const seenTargets = new Set();
             const query = strapi.db.query(uid);
+            const skip = (code, message) => {
+              result.skipped += 1;
+              if (code) collector.add({ uid, field, code, message });
+            };
 
+            // Checks that need no database access.
+            const pending = [];
             for (const entry of entries) {
-              const skip = (code, message) => {
-                result.skipped += 1;
-                if (code) collector.add({ uid, field, code, message });
-              };
               const target = `${entry.documentId}\u0000${entry.locale ?? ''}`;
-
               if (classifyUuidFieldValue(entry.uuid, options) !== 'valid') {
                 skip(
                   'IMPORT_VALUE_MISMATCH',
@@ -487,17 +550,54 @@ const migrations = ({ strapi }) => {
                 continue;
               }
               seenTargets.add(target);
-              const owner = seenValues.get(entry.uuid);
+              // Values are stored in canonical form (lowercase UUID part).
+              const value = canonicalUuidValue(entry.uuid);
+              const owner = seenValues.get(value);
               if (owner !== undefined && owner !== entry.documentId) {
                 skip('DUPLICATE_VALUE', 'An imported UUID value is repeated in this file.');
                 continue;
               }
-              seenValues.set(entry.uuid, entry.documentId);
+              seenValues.set(value, entry.documentId);
+              pending.push({ entry, value });
+            }
 
+            // Two batched lookups per chunk instead of three queries per entry.
+            for (let start = 0; start < pending.length; start += IMPORT_LOOKUP_CHUNK) {
+              const chunk = pending.slice(start, start + IMPORT_LOOKUP_CHUNK);
+              let targetRows;
+              let ownerRows;
               try {
-                const where = { documentId: entry.documentId };
-                if (entry.locale) where.locale = entry.locale;
-                const rows = await query.findMany({ where, select: ['id', field] });
+                targetRows = await query.findMany({
+                  where: {
+                    documentId: { $in: [...new Set(chunk.map((i) => i.entry.documentId))] },
+                  },
+                  select: ['id', 'documentId', field, ...(hasLocale ? ['locale'] : [])],
+                });
+                ownerRows = await query.findMany({
+                  where: { [field]: { $in: chunk.flatMap((i) => uuidValueSpellings(i.value)) } },
+                  select: ['documentId', field],
+                });
+              } catch {
+                throw new RepairWriteError(uid, field, 'import');
+              }
+              const rowsByDocument = new Map();
+              for (const row of targetRows) {
+                const list = rowsByDocument.get(row.documentId);
+                if (list) list.push(row);
+                else rowsByDocument.set(row.documentId, [row]);
+              }
+              const owners = new Map();
+              const addOwner = (value, documentId) => {
+                const set = owners.get(value);
+                if (set) set.add(documentId);
+                else owners.set(value, new Set([documentId]));
+              };
+              for (const row of ownerRows) addOwner(canonicalUuidValue(row[field]), row.documentId);
+
+              for (const { entry, value } of chunk) {
+                const rows = (rowsByDocument.get(entry.documentId) ?? []).filter(
+                  (row) => !entry.locale || row.locale === entry.locale
+                );
                 if (rows.length === 0) {
                   skip(
                     'TARGET_NOT_FOUND',
@@ -505,42 +605,40 @@ const migrations = ({ strapi }) => {
                   );
                   continue;
                 }
-                const current = rows.map((row) => row[field]).filter((value) => !isEmpty(value));
-                if (current.length === rows.length && current.every((v) => v === entry.uuid)) {
+                const current = rows.map((row) => row[field]).filter((v) => !isEmpty(v));
+                const same = (v) => canonicalUuidValue(v) === value;
+                if (current.length === rows.length && current.every(same)) {
                   result.unchanged += 1;
                   continue;
                 }
-                if (current.some((value) => value !== entry.uuid)) {
+                if (!current.every(same)) {
                   skip(
                     'TARGET_HAS_VALUE',
                     'A target entry already has a different UUID. Existing values are never replaced.'
                   );
                   continue;
                 }
-                const conflict = await query.findOne({
-                  where: { [field]: entry.uuid, documentId: { $ne: entry.documentId } },
-                  select: ['id'],
-                });
-                if (conflict) {
+                if ([...(owners.get(value) ?? [])].some((id) => id !== entry.documentId)) {
                   skip('IMPORT_CONFLICT', 'The imported UUID is already used by another entry.');
                   continue;
                 }
 
-                result.changes.push({
-                  uid,
-                  field,
-                  documentId: entry.documentId,
-                  newValue: entry.uuid,
-                });
+                result.changes.push({ uid, field, documentId: entry.documentId, newValue: value });
                 if (!dryRun) {
-                  await query.updateMany({
-                    where: { $and: [where, EMPTY_WHERE(field)] },
-                    data: { [field]: entry.uuid },
-                  });
+                  const where = { documentId: entry.documentId };
+                  if (entry.locale) where.locale = entry.locale;
+                  try {
+                    await query.updateMany({
+                      where: { $and: [where, EMPTY_WHERE(field)] },
+                      data: { [field]: value },
+                    });
+                  } catch {
+                    throw new RepairWriteError(uid, field, 'import');
+                  }
                 }
+                for (const row of rows) if (isEmpty(row[field])) row[field] = value;
+                addOwner(value, entry.documentId);
                 result.imported += 1;
-              } catch {
-                throw new RepairWriteError(uid, field, 'import');
               }
             }
           }

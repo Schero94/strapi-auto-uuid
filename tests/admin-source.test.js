@@ -43,6 +43,24 @@ describe('admin source guards', () => {
     expect(read('pages/settings/styles.js')).not.toMatch(/infinite/);
   });
 
+  it('RA-6/RA-1: reads the saved value from the form and detects the clone page', () => {
+    const input = read('components/Input/index.jsx');
+    expect(input).toMatch(/useForm\('UuidInput', \(form\) => form\.initialValues, false\)/);
+    expect(input).not.toMatch(/const \[savedValue\] = useState/);
+    expect(input).toMatch(/'\/content-manager\/:collectionType\/:slug\/clone\/:origin'/);
+    expect(input).toMatch(/useMatch\(CLONE_PATH\)/);
+  });
+
+  it('RA-7: Run check uses one scan (no extra /diagnose round trip)', () => {
+    expect(read('pages/SettingsPage.jsx')).not.toMatch(/\/diagnose/);
+  });
+
+  it('RA-3: exports compact JSON split into importable parts', () => {
+    const page = read('pages/SettingsPage.jsx');
+    expect(page).toMatch(/splitExport\(data\)/);
+    expect(page).not.toMatch(/JSON\.stringify\(data, null, 2\)/);
+  });
+
   it('never uses window.confirm or writes to the field on mount', () => {
     expect(files.some(({ source }) => /window\.confirm|\bconfirm\(/.test(source))).toBe(false);
     const input = read('components/Input/index.jsx');

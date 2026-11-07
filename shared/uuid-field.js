@@ -157,3 +157,54 @@ export function generateUuidFieldValue(options) {
 
   return `${options.prefix || ''}${generator()}`;
 }
+
+/**
+ * Splits a value into its prefix and a trailing 36-character UUID.
+ *
+ * @param {unknown} value Stored or submitted value.
+ * @returns {{ prefix: string, uuid: string }|null} Parts, or null when the
+ *   value does not end in a well-formed UUID.
+ */
+function splitUuidValue(value) {
+  if (typeof value !== 'string' || value.length < UUID_LENGTH) return null;
+  const uuidPart = value.slice(value.length - UUID_LENGTH);
+  if (!uuid.validate(uuidPart)) return null;
+  return { prefix: value.slice(0, value.length - UUID_LENGTH), uuid: uuidPart };
+}
+
+/**
+ * Returns the canonical spelling of a value: the trailing UUID in lowercase,
+ * the prefix unchanged. RFC 9562 (section 4) treats UUIDs as
+ * case-insensitive, so `ABC-0A1B...` and `ABC-0a1b...` name the same
+ * identifier. Values that do not end in a UUID are returned unchanged.
+ *
+ * @param {unknown} value Stored or submitted value.
+ * @returns {unknown} Canonical value, or the input when it is not a UUID value.
+ */
+export function canonicalUuidValue(value) {
+  const parts = splitUuidValue(value);
+  return parts ? `${parts.prefix}${parts.uuid.toLowerCase()}` : value;
+}
+
+/**
+ * Lists the spellings a database lookup must match to find an existing value
+ * that differs from `value` only in the case of its UUID part: the canonical
+ * lowercase form and the all-uppercase form (as written by .NET, SQL Server
+ * and many CSV exports). Exact-match lookups keep using an index on the
+ * column; mixed-case legacy values are found by the check and the repair,
+ * which compare canonical values.
+ *
+ * @param {unknown} value Submitted value.
+ * @returns {unknown[]} Distinct spellings to look up, including `value` itself.
+ */
+export function uuidValueSpellings(value) {
+  const parts = splitUuidValue(value);
+  if (!parts) return [value];
+  return [
+    ...new Set([
+      value,
+      `${parts.prefix}${parts.uuid.toLowerCase()}`,
+      `${parts.prefix}${parts.uuid.toUpperCase()}`,
+    ]),
+  ];
+}
