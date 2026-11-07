@@ -101,6 +101,62 @@ describe('create rules', () => {
     expect(clone.editableId).not.toBe(source.editableId);
   });
 
+  it('gives every locale of a multi-locale clone the same non-localized value', async () => {
+    // Acceptance finding: Document Service clone({ locale: '*' }) creates one
+    // row per locale with the new documentId; each locale got its own value.
+    host = await createSqliteHost();
+    const source = await host.inTransaction(() =>
+      host.db.query(UID).create({ data: { title: 'A', locale: 'en' } })
+    );
+    const cloneRow = (locale) =>
+      host.inTransaction(() =>
+        host.db.query(UID).create({
+          data: { documentId: 'clone-doc-id-multi-0001', locale, publicId: source.publicId },
+        })
+      );
+    const german = await cloneRow('de');
+    const english = await cloneRow('en');
+    expect(german.publicId).toMatch(V4);
+    expect(german.publicId).not.toBe(source.publicId);
+    expect(english.publicId).toBe(german.publicId);
+  });
+
+  it('gives concurrently created clone locales the same non-localized value', async () => {
+    // Document Service clone creates all locale rows with async.map (concurrently).
+    host = await createSqliteHost();
+    const source = await host.inTransaction(() =>
+      host.db.query(UID).create({ data: { title: 'A', locale: 'en' } })
+    );
+    const [german, english] = await host.inTransaction(() =>
+      Promise.all(
+        ['de', 'en'].map((locale) =>
+          host.db.query(UID).create({
+            data: { documentId: 'clone-doc-id-para-0001', locale, publicId: source.publicId },
+          })
+        )
+      )
+    );
+    expect(german.publicId).toMatch(V4);
+    expect(german.publicId).not.toBe(source.publicId);
+    expect(english.publicId).toBe(german.publicId);
+  });
+
+  it('rejects a duplicate inside a createMany batch even with new documentIds', async () => {
+    host = await createSqliteHost();
+    const shared = uuid.v4();
+    const error = await errorOf(() =>
+      host.inTransaction(() =>
+        host.db.query(UID).createMany({
+          data: [
+            { documentId: 'batch-doc-0000000000001', editableId: shared },
+            { documentId: 'batch-doc-0000000000002', editableId: shared },
+          ],
+        })
+      )
+    );
+    expect(error?.details?.code).toBe('DUPLICATE_UUID');
+  });
+
   it('rejects an explicit duplicate on create for an editable field (no likely-publish bypass)', async () => {
     host = await createSqliteHost();
     const first = await host.inTransaction(() =>

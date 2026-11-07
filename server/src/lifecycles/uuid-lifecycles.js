@@ -30,7 +30,9 @@ const sameValue = (a, b) => (isEmpty(a) && isEmpty(b)) || a === b;
  *   generated on the server; a client-supplied value is replaced unless it
  *   already belongs to the same document (publish, discard draft, new locale).
  * - A copy that carries a new documentId (Document Service `clone`) gets a
- *   fresh value when its copied value belongs to the source document.
+ *   fresh value when its copied value belongs to the source document. The
+ *   later locales of a multi-locale clone reuse the value of the first one
+ *   for non-localized fields. Duplicates inside one batch are rejected.
  * - Any other create with a value used by another document is rejected.
  * - On update, an unchanged value is always accepted, even when it no longer
  *   matches the current version or prefix. Changes are validated, must be
@@ -80,6 +82,15 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
     return Boolean(row);
   };
 
+  /** Returns the non-empty value that another row of `documentId` already holds, or null. */
+  const findDocumentValue = async (uid, field, documentId) => {
+    const row = await strapi.db.query(uid).findOne({
+      where: { documentId, $and: [{ [field]: { $notNull: true } }, { [field]: { $ne: '' } }] },
+      select: [field],
+    });
+    return row?.[field] ?? null;
+  };
+
   const documentExists = async (uid, documentId) => {
     const row = await strapi.db.query(uid).findOne({ where: { documentId }, select: ['id'] });
     return Boolean(row);
@@ -107,6 +118,38 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
     });
   };
 
+  // Document Service `clone` creates the rows of all locales concurrently
+  // (`async.map`), so the database cannot tell the later rows which value the
+  // first one received. Values generated for a new document are remembered
+  // briefly, keyed by documentId, so every row of the clone gets the same one.
+  const documentValues = new Map();
+  const DOCUMENT_VALUE_TTL_MS = 60_000;
+  const DOCUMENT_VALUE_MAX = 1_000;
+
+  /**
+   * Generates a value once per document and non-localized field.
+   *
+   * @returns {Promise<string>} The value shared by all rows of the document.
+   */
+  const generateForDocument = (uid, field, options, reserved, documentId) => {
+    const key = `${uid}\u0000${field}\u0000${documentId}`;
+    const now = Date.now();
+    const hit = documentValues.get(key);
+    if (hit && hit.expires > now) return hit.promise;
+
+    if (documentValues.size >= DOCUMENT_VALUE_MAX) {
+      for (const [k, entry] of documentValues) {
+        if (entry.expires <= now || documentValues.size >= DOCUMENT_VALUE_MAX) {
+          documentValues.delete(k);
+        }
+      }
+    }
+    const promise = generateUnique(uid, field, options, reserved);
+    documentValues.set(key, { promise, expires: now + DOCUMENT_VALUE_TTL_MS });
+    promise.catch(() => documentValues.delete(key));
+    return promise;
+  };
+
   /**
    * Generates, keeps, replaces or rejects the UUID values of one row that is
    * about to be inserted.
@@ -132,10 +175,25 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
       const serverGenerated = autoGenerate && !options.allowEdit && !isUuidRepairContext();
       const value = data[field];
       const reserve = (v) => reserved.add(`${field}\u0000${v}`);
+      const shared = Boolean(documentId) && !isLocalizedAttribute(attribute);
+      const generate = () =>
+        shared
+          ? generateForDocument(uid, field, options, reserved, documentId)
+          : generateUnique(uid, field, options, reserved);
+
+      // Rows of one document share the value of a non-localized field. A
+      // multi-locale clone creates one row per locale with the new
+      // documentId; later locales take the value given to the first one.
+      const sharedValue = shared ? await findDocumentValue(uid, field, documentId) : null;
 
       if (isEmpty(value)) {
+        if (!isEmpty(sharedValue)) {
+          data[field] = sharedValue;
+          reserve(sharedValue);
+          continue;
+        }
         if (autoGenerate) {
-          data[field] = await generateUnique(uid, field, options, reserved);
+          data[field] = await generate();
           reserve(data[field]);
         }
         continue;
@@ -148,23 +206,33 @@ export function createUuidLifecycles({ strapi, models, config, log }) {
         continue;
       }
 
+      if (
+        !isEmpty(sharedValue) &&
+        (serverGenerated || (await findOtherOwner(uid, field, value, documentId)))
+      ) {
+        data[field] = sharedValue;
+        reserve(sharedValue);
+        continue;
+      }
+
       const isClone = Boolean(documentId) && (await checkNewDocument());
 
       if (serverGenerated) {
-        data[field] = await generateUnique(uid, field, options, reserved);
+        data[field] = await generate();
         reserve(data[field]);
         log.debug(`[strapi-auto-uuid] Replaced a client-supplied value for ${uid}.${field}`);
         continue;
       }
 
       const valid = isUuidFieldValue(value, options);
-      const duplicate =
-        valid &&
-        (reserved.has(`${field}\u0000${value}`) ||
-          Boolean(await findOtherOwner(uid, field, value, documentId)));
+      // A duplicate inside the same batch is a client error, never a clone copy.
+      const batchDuplicate = valid && reserved.has(`${field}\u0000${value}`);
+      const ownedElsewhere =
+        valid && !batchDuplicate && Boolean(await findOtherOwner(uid, field, value, documentId));
+      const duplicate = batchDuplicate || ownedElsewhere;
 
-      if (isClone && autoGenerate && (!valid || duplicate)) {
-        data[field] = await generateUnique(uid, field, options, reserved);
+      if (isClone && autoGenerate && (!valid || ownedElsewhere)) {
+        data[field] = await generate();
         reserve(data[field]);
         log.info(`[strapi-auto-uuid] Generated a new value for a cloned ${uid}.${field}`);
         continue;
