@@ -18,7 +18,9 @@ const motion = (rules) => css`
  * (light green with dark text), which keeps the contrast above 4.5:1.
  */
 export const HeroBanner = styled.section`
-  background: linear-gradient(
+  /* Solid fallback first: contrast tools and forced-colour modes read it. */
+  background-color: ${({ theme }) => theme.colors.success600};
+  background-image: linear-gradient(
     135deg,
     ${({ theme }) => theme.colors.success600} 0%,
     ${({ theme }) => theme.colors.success700} 100%

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 import { Alert, Box, Button, Dialog, Flex, Modal, Typography } from '@strapi/design-system';
 import { ConfirmDialog, useFetchClient } from '@strapi/strapi/admin';
@@ -56,6 +56,21 @@ export const RepairDialog = ({
   const [preview, setPreview] = useState(null);
   const [previewKey, setPreviewKey] = useState(null);
   const [error, setError] = useState(null);
+  const wrapperRef = useRef(null);
+  const restoreFocusRef = useRef(false);
+
+  // The trigger card is disabled while a request runs, so the dialog cannot
+  // hand focus back when it closes after "Apply". Return it once enabled.
+  useEffect(() => {
+    if (open || pending || disabled || !restoreFocusRef.current) return undefined;
+    restoreFocusRef.current = false;
+    const frame = requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      wrapperRef.current?.querySelector('button')?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [open, pending, disabled]);
 
   const currentPreview = previewKey === resetKey ? preview : null;
   const changes = countChanges(currentPreview);
@@ -77,7 +92,10 @@ export const RepairDialog = ({
   const onOpenChange = (next) => {
     if (pending) return;
     setOpen(next);
-    if (!next) reset();
+    if (!next) {
+      restoreFocusRef.current = true;
+      reset();
+    }
   };
 
   const request = async (dryRun) => {
@@ -116,6 +134,7 @@ export const RepairDialog = ({
         return;
       }
       setConfirmOpen(false);
+      restoreFocusRef.current = true;
       setOpen(false);
       reset();
       onApplied(data);
@@ -131,7 +150,9 @@ export const RepairDialog = ({
 
   return (
     <Modal.Root open={open} onOpenChange={onOpenChange}>
-      <Modal.Trigger disabled={disabled}>{trigger}</Modal.Trigger>
+      <Box ref={wrapperRef} height="100%">
+        <Modal.Trigger disabled={disabled}>{trigger}</Modal.Trigger>
+      </Box>
       <Modal.Content>
         <Modal.Header>
           <Modal.Title>{title}</Modal.Title>

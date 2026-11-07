@@ -6,7 +6,7 @@
  * of UUID mappings. Each action is shown only to roles with the matching
  * permission; the server enforces the same permissions on every route.
  */
-import { useCallback, useEffect, useId, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useId, useState } from 'react';
 import { useIntl } from 'react-intl';
 import { Alert, Badge, Box, Button, Checkbox, Flex, Grid, Typography } from '@strapi/design-system';
 import {
@@ -95,24 +95,31 @@ const StatCard = ({ label, value, tone, statusLabel, hint }) => {
 };
 
 /**
- * Action card button. Rendered inside a dialog trigger or with its own onClick.
+ * Action card button. It forwards its ref because dialog triggers (Radix
+ * `asChild`) attach their ref and focus handling to it.
  *
  * @param {Object} props Props.
+ * @param {React.Ref<HTMLButtonElement>} ref Forwarded ref.
  * @returns {JSX.Element} Card button.
  */
-const ActionCard = ({ icon: Icon, tone, title, description, ...rest }) => (
-  <ActionCardButton type="button" $tone={tone} {...rest}>
-    <ActionIcon $tone={tone} aria-hidden>
-      <Icon />
-    </ActionIcon>
-    <Typography variant="delta" tag="span" textColor="neutral800">
-      {title}
-    </Typography>
-    <Typography variant="omega" tag="span" textColor="neutral600">
-      {description}
-    </Typography>
-  </ActionCardButton>
-);
+const ActionCard = forwardRef(function ActionCard(
+  { icon: Icon, tone, title, description, ...rest },
+  ref
+) {
+  return (
+    <ActionCardButton ref={ref} type="button" $tone={tone} {...rest}>
+      <ActionIcon $tone={tone} aria-hidden>
+        <Icon />
+      </ActionIcon>
+      <Typography variant="delta" tag="span" textColor="neutral800">
+        {title}
+      </Typography>
+      <Typography variant="omega" tag="span" textColor="neutral600">
+        {description}
+      </Typography>
+    </ActionCardButton>
+  );
+});
 
 const SettingsPage = () => {
   const { formatMessage } = useIntl();
@@ -138,8 +145,11 @@ const SettingsPage = () => {
     fixLegacy: false,
   });
   const [optionsVersion, setOptionsVersion] = useState(0);
+  const [dismissed, setDismissed] = useState({});
 
   const t = (descriptor, values) => formatMessage(descriptor, values);
+  const closeLabel = formatMessage({ id: getTranslation('common.close'), defaultMessage: 'Close' });
+  const dismiss = (key) => () => setDismissed((prev) => ({ ...prev, [key]: true }));
 
   /** Loads the counts per field and the list of UUID fields. */
   const loadStats = useCallback(async () => {
@@ -312,8 +322,10 @@ const SettingsPage = () => {
       />
       <Layouts.Content>
         <Flex direction="column" alignItems="stretch" gap={6} paddingBottom={8} minWidth={0}>
-          {loadState === 'error' && (
+          {loadState === 'error' && !dismissed.load && (
             <Alert
+              closeLabel={closeLabel}
+              onClose={dismiss('load')}
               variant="danger"
               title={t({
                 id: getTranslation('load.error.title'),
@@ -362,8 +374,10 @@ const SettingsPage = () => {
             </Flex>
           </HeroBanner>
 
-          {scanHasErrors && (
+          {scanHasErrors && !dismissed.scan && (
             <Alert
+              closeLabel={closeLabel}
+              onClose={dismiss('scan')}
               variant="warning"
               title={t({
                 id: getTranslation('scan.incomplete.title'),
@@ -378,8 +392,10 @@ const SettingsPage = () => {
             </Alert>
           )}
 
-          {needsRepair && (
+          {needsRepair && !dismissed.repair && (
             <Alert
+              closeLabel={closeLabel}
+              onClose={dismiss('repair')}
               variant="warning"
               title={t({
                 id: getTranslation('repair.needed.title'),
