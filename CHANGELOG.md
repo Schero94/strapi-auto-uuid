@@ -1,3 +1,10 @@
+## [2.1.1](https://github.com/Schero94/strapi-auto-uuid/compare/v2.1.0...v2.1.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* **package:** install without peer warnings, complete docs and site ([#4](https://github.com/Schero94/strapi-auto-uuid/issues/4)) ([9c55e2e](https://github.com/Schero94/strapi-auto-uuid/commit/9c55e2e00598585f6ca0844b41dc29dbed866e0c))
+
 ## [Unreleased]
 
 Next release: **2.1.1** (patch). Packaging and documentation only. No change
