@@ -12,6 +12,7 @@
   "check.done": "Vérification terminée.",
   "check.incomplete": "Vérification terminée, mais certains champs n'ont pas pu être vérifiés.",
   "check.lastRun": "Les chiffres proviennent de la vérification qui vient d'être lancée.",
+  "code.CONCURRENT_CHANGE": "Une entrée a été modifiée pendant l'opération, par exemple sur un autre serveur. Elle a été ignorée.",
   "code.DUPLICATE_TARGET": "Une entrée apparaît plusieurs fois dans le fichier.",
   "code.DUPLICATE_VALUE": "Un UUID apparaît plusieurs fois dans le fichier.",
   "code.IMPORT_CONFLICT": "Un UUID du fichier est déjà utilisé par une autre entrée.",

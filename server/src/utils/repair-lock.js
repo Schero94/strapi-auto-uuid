@@ -1,10 +1,22 @@
 /**
- * Process-wide guard that lets only one UUID repair or import run at a time.
- * Repairs scan and rewrite whole tables; two overlapping runs could replay
- * each other's stale plans. The guard is per Node.js process: deployments
- * with several Strapi replicas must still avoid starting repairs on two
- * replicas at the same moment.
+ * Guard that lets only one UUID repair or import run at a time. Repairs scan
+ * and rewrite whole tables; two overlapping runs could replay each other's
+ * stale plans and lock the same rows in opposite order.
+ *
+ * Two gates:
+ * 1. A process-local flag, checked first, so a second click on the same
+ *    process is rejected without touching the database.
+ * 2. A transaction-scoped database lock (see `cluster-lock.js`), taken as the
+ *    first statement of the repair transaction, so a repair started on
+ *    another replica or pm2 worker is rejected with the same error. The
+ *    database releases it on commit, rollback or a lost connection.
+ *
+ * The repair then also holds the `repair-writes` lock exclusively until it
+ * commits. Saves that fill an empty write-once field take that lock shared
+ * before they read, so they see the repair's values instead of overwriting
+ * them after the repair commits.
  */
+import { lockNamed, tryNamedLock } from './cluster-lock.js';
 
 let activeOperation = null;
 
@@ -18,7 +30,7 @@ export class RepairInProgressError extends Error {
 }
 
 /**
- * Runs `operation` while holding the repair lock.
+ * Runs `operation` while holding the process-local repair lock.
  *
  * @template T
  * @param {string} name Operation name, kept for diagnostics.
@@ -37,6 +49,21 @@ export async function runExclusiveRepair(name, operation) {
 }
 
 /**
- * @returns {string|null} Name of the running repair, or null.
+ * Takes the cross-process repair lock for the open transaction, then waits
+ * until saves that are filling write-once fields have committed and blocks
+ * new ones until the repair ends. Call it as the first statement inside the
+ * repair transaction.
+ *
+ * @param {Object} strapi Strapi instance.
+ * @returns {Promise<void>}
+ * @throws {RepairInProgressError} When another process runs a repair or import.
+ */
+export async function assertClusterRepairLock(strapi) {
+  if (!(await tryNamedLock(strapi, 'repair'))) throw new RepairInProgressError();
+  await lockNamed(strapi, 'repair-writes');
+}
+
+/**
+ * @returns {string|null} Name of the repair running in this process, or null.
  */
 export const getActiveRepair = () => activeOperation;

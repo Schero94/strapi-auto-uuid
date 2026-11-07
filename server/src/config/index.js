@@ -16,6 +16,10 @@ import { z } from 'zod';
  *       autoMigrate: false, // repair empty, malformed and duplicate values on boot
  *       maxRetryAttempts: 3, // collision retries per generated value (1-10)
  *       logLevel: 'info', // 'debug' | 'info' | 'warn' | 'error'
+ *       // Where admin rate-limit counters live: 'auto' (database on PostgreSQL
+ *       // and MySQL, memory on SQLite), 'database' (shared by all processes)
+ *       // or 'memory' (per process).
+ *       rateLimitStore: 'auto',
  *     },
  *   },
  * };
@@ -28,6 +32,7 @@ export const PLUGIN_CONFIG_DEFAULTS = Object.freeze({
   autoMigrate: false,
   maxRetryAttempts: 3,
   logLevel: 'info',
+  rateLimitStore: 'auto',
 });
 
 /**
@@ -44,6 +49,7 @@ export const pluginConfigSchema = z.strictObject({
   autoMigrate: z.boolean().optional(),
   maxRetryAttempts: z.number().int().min(1).max(10).optional(),
   logLevel: z.enum(['debug', 'info', 'warn', 'error']).optional(),
+  rateLimitStore: z.enum(['auto', 'database', 'memory']).optional(),
   allowManualEdit: z.boolean().optional(),
 });
 
@@ -52,7 +58,8 @@ export const pluginConfigSchema = z.strictObject({
  *
  * @param {unknown} raw Value of `strapi.config.get('plugin::field-uuid')`.
  * @returns {{ defaultVersion: 'v4'|'v7', autoGenerate: boolean, validateUniqueness: boolean,
- *   autoMigrate: boolean, maxRetryAttempts: number, logLevel: 'debug'|'info'|'warn'|'error' }}
+ *   autoMigrate: boolean, maxRetryAttempts: number, logLevel: 'debug'|'info'|'warn'|'error',
+ *   rateLimitStore: 'auto'|'database'|'memory' }}
  * @throws {Error} When a key is unknown or a value has the wrong type or range.
  */
 export function normalizePluginConfig(raw = {}) {

@@ -10,8 +10,15 @@
  *
  * Real writes run in one transaction, inside the repair context (which lets
  * the lifecycle hooks accept replacements of immutable values) and under a
- * process-wide lock. The plan is computed inside that transaction, so values
- * an editor changed after the preview are never overwritten with a stale plan.
+ * process-local lock plus a cross-process database lock (see
+ * `utils/cluster-lock.js`). The plan is computed inside that transaction, so
+ * values an editor changed after the preview are never overwritten with a
+ * stale plan.
+ *
+ * Every write is guarded by the value it expects (old value, or empty). When
+ * an editor on another process changed the row between scan and write, the
+ * guarded write matches no row; it is then not counted as fixed or imported
+ * and is reported as skipped with code CONCURRENT_CHANGE.
  */
 
 import {
@@ -21,7 +28,8 @@ import {
 } from '../../../shared/uuid-field.js';
 import { getPluginConfig } from '../config/index.js';
 import { withUuidRepairContext } from '../utils/repair-context.js';
-import { runExclusiveRepair } from '../utils/repair-lock.js';
+import { LOCK_SPACES, getDialect, lockKeys, valueLockKey } from '../utils/cluster-lock.js';
+import { assertClusterRepairLock, runExclusiveRepair } from '../utils/repair-lock.js';
 import {
   fetchFieldRows,
   getUuidModels,
@@ -37,6 +45,19 @@ export const IMPORT_LOOKUP_CHUNK = 500;
 
 const isEmpty = (value) => value === null || value === undefined || value === '';
 const EMPTY_WHERE = (field) => ({ $or: [{ [field]: { $null: true } }, { [field]: '' }] });
+const CONCURRENT_MESSAGE =
+  'An entry changed while the operation ran (for example on another server instance). It was skipped.';
+
+/**
+ * Reads the affected-row count of a query-engine `updateMany` result.
+ * Unknown result shapes count as written, so a missing count never hides a
+ * write.
+ *
+ * @param {unknown} result `updateMany` result (`{ count }`).
+ * @returns {number} Affected rows.
+ */
+export const affectedRows = (result) =>
+  Number.isFinite(result?.count) ? result.count : Number.isFinite(result) ? result : 1;
 
 /** Carries safe context when a batch must abort and roll back. */
 class RepairWriteError extends Error {
@@ -168,6 +189,17 @@ const unitWhere = (unit) =>
     : [{ documentId: unit.documentId }, { locale: unit.locale }];
 
 const migrations = ({ strapi }) => {
+  /**
+   * findMany that returns the latest committed rows. MySQL runs transactions
+   * in REPEATABLE READ, where a plain read returns the snapshot taken at the
+   * first read; a locking read returns the latest version. PostgreSQL runs
+   * READ COMMITTED, where every statement sees the latest committed rows.
+   */
+  const readLatest = (uid, params) =>
+    getDialect(strapi) === 'mysql' && strapi.db.inTransaction()
+      ? strapi.db.queryBuilder(uid).init(params).forUpdate().execute()
+      : strapi.db.query(uid).findMany(params);
+
   const getOptions = (uid, field) =>
     resolveFieldOptions(strapi, uid, field, getPluginConfig(strapi).defaultVersion);
 
@@ -218,25 +250,42 @@ const migrations = ({ strapi }) => {
       // `${unit.key}\u0000${oldValue}` -> new value, for the empty-field step.
       const replacements = new Map();
       const query = strapi.db.query(uid);
+      const addSkipped = (entry) => {
+        if (result.skippedChanges.length < MAX_REPORTED_ERRORS) result.skippedChanges.push(entry);
+      };
 
+      /**
+       * Records and (when writing) applies one change.
+       *
+       * @returns {Promise<boolean>} False when the guarded write matched no
+       *   row because the value changed concurrently.
+       */
       const replace = async (type, unit, oldValue, newValue, extra = {}) => {
         const change = { type, uid, field, documentId: unit.documentId, oldValue, newValue };
         if (unit.locale !== undefined) change.locale = unit.locale;
-        result.changes.push({ ...change, ...extra });
-        if (!write) return;
-        try {
-          await query.updateMany({
-            where: {
-              $and: [
-                ...unitWhere(unit),
-                isEmpty(oldValue) ? EMPTY_WHERE(field) : { [field]: oldValue },
-              ],
-            },
-            data: { [field]: newValue },
-          });
-        } catch {
-          throw new RepairWriteError(uid, field, 'write');
+        let written;
+        if (write) {
+          try {
+            written = await query.updateMany({
+              where: {
+                $and: [
+                  ...unitWhere(unit),
+                  isEmpty(oldValue) ? EMPTY_WHERE(field) : { [field]: oldValue },
+                ],
+              },
+              data: { [field]: newValue },
+            });
+          } catch {
+            throw new RepairWriteError(uid, field, 'write');
+          }
+          if (affectedRows(written) === 0) {
+            result.skipped += 1;
+            addSkipped({ uid, field, code: 'CONCURRENT_CHANGE', message: CONCURRENT_MESSAGE });
+            return false;
+          }
         }
+        result.changes.push({ ...change, ...extra });
+        return true;
       };
 
       const fresh = async () => {
@@ -254,8 +303,8 @@ const migrations = ({ strapi }) => {
         if (handled.has(key)) return;
         handled.add(key);
         const next = await fresh();
+        if (!(await replace(type, unit, value, next, extra))) return;
         replacements.set(key, next);
-        await replace(type, unit, value, next, extra);
         result.fixed[category] += 1;
       };
 
@@ -306,8 +355,9 @@ const migrations = ({ strapi }) => {
             own.length === 1 && classifyUuidFieldValue(own[0], options) !== 'malformed'
               ? own[0]
               : null;
-          await replace('empty_fix', unit, null, reusable ?? (await fresh()));
-          result.fixed.empty += 1;
+          if (await replace('empty_fix', unit, null, reusable ?? (await fresh()))) {
+            result.fixed.empty += 1;
+          }
         }
       }
     }
@@ -384,6 +434,8 @@ const migrations = ({ strapi }) => {
         dryRun,
         startedAt: new Date().toISOString(),
         fixed: { empty: 0, invalid: 0, legacy: 0, duplicates: 0 },
+        skipped: 0,
+        skippedChanges: [],
         errors: [],
         changes: [],
       };
@@ -414,7 +466,12 @@ const migrations = ({ strapi }) => {
           await execute();
         } else {
           await runExclusiveRepair('migration', () =>
-            withUuidRepairContext(() => strapi.db.transaction(execute))
+            withUuidRepairContext(() =>
+              strapi.db.transaction(async () => {
+                await assertClusterRepairLock(strapi);
+                await execute();
+              })
+            )
           );
           if (result.totalFixed !== 0 || result.changes.length > 0) {
             strapi.log.info(
@@ -438,6 +495,8 @@ const migrations = ({ strapi }) => {
           },
         ];
         result.changes = [];
+        result.skipped = 0;
+        result.skippedChanges = [];
         result.fixed = { empty: 0, invalid: 0, legacy: 0, duplicates: 0 };
       }
       return finish();
@@ -567,13 +626,22 @@ const migrations = ({ strapi }) => {
               let targetRows;
               let ownerRows;
               try {
+                // Serialize with editors on other processes that claim the
+                // same values (see lifecycles), then read the latest rows.
+                if (!dryRun) {
+                  await lockKeys(
+                    strapi,
+                    LOCK_SPACES.value,
+                    chunk.map((i) => valueLockKey(uid, field, i.value))
+                  );
+                }
                 targetRows = await query.findMany({
                   where: {
                     documentId: { $in: [...new Set(chunk.map((i) => i.entry.documentId))] },
                   },
                   select: ['id', 'documentId', field, ...(hasLocale ? ['locale'] : [])],
                 });
-                ownerRows = await query.findMany({
+                ownerRows = await readLatest(uid, {
                   where: { [field]: { $in: chunk.flatMap((i) => uuidValueSpellings(i.value)) } },
                   select: ['documentId', field],
                 });
@@ -623,19 +691,24 @@ const migrations = ({ strapi }) => {
                   continue;
                 }
 
-                result.changes.push({ uid, field, documentId: entry.documentId, newValue: value });
                 if (!dryRun) {
                   const where = { documentId: entry.documentId };
                   if (entry.locale) where.locale = entry.locale;
+                  let written;
                   try {
-                    await query.updateMany({
+                    written = await query.updateMany({
                       where: { $and: [where, EMPTY_WHERE(field)] },
                       data: { [field]: value },
                     });
                   } catch {
                     throw new RepairWriteError(uid, field, 'import');
                   }
+                  if (affectedRows(written) === 0) {
+                    skip('CONCURRENT_CHANGE', CONCURRENT_MESSAGE);
+                    continue;
+                  }
                 }
+                result.changes.push({ uid, field, documentId: entry.documentId, newValue: value });
                 for (const row of rows) if (isEmpty(row[field])) row[field] = value;
                 addOwner(value, entry.documentId);
                 result.imported += 1;
@@ -650,7 +723,12 @@ const migrations = ({ strapi }) => {
           await execute();
         } else {
           await runExclusiveRepair('import', () =>
-            withUuidRepairContext(() => strapi.db.transaction(execute))
+            withUuidRepairContext(() =>
+              strapi.db.transaction(async () => {
+                await assertClusterRepairLock(strapi);
+                await execute();
+              })
+            )
           );
         }
       } catch (error) {

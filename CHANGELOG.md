@@ -1,3 +1,48 @@
+## [Unreleased]
+
+Next release: **2.1.0** (minor). Auto UUID now works with several Strapi
+processes on one database, for example 2 Railway replicas with 4 pm2 cluster
+workers each. No change to routes, responses or existing config; the database
+is the only shared state (no Redis needed). See the README section "Running
+several instances".
+
+### Added
+
+- Cross-process locks for UUID writes. On PostgreSQL the plugin uses
+  transaction-scoped advisory locks; on MySQL 8 and MariaDB it uses row locks
+  on a new table `field_uuid_locks` (created at startup). SQLite is unchanged
+  (one writer).
+- Shared admin rate limits in a new table `field_uuid_rate_limits` (one
+  atomic upsert per request). New option `rateLimitStore`
+  (`'auto' | 'database' | 'memory'`, default `'auto'`: database on PostgreSQL
+  and MySQL, memory on SQLite). If the table cannot be created the plugin
+  warns and keeps per-process counters.
+- `npm run test:concurrency` races 8 Node processes on one SQLite file or
+  PostgreSQL database.
+
+### Fixed
+
+- Two processes saving the same client-supplied UUID at the same time could
+  both store it. Now one save wins and the other gets 400 `DUPLICATE_UUID`.
+- Two processes filling the same empty write-once field could both write. Now
+  the second save gets 400 `IMMUTABLE_UUID`.
+- Repairs and imports started on two processes ran in parallel. Now the second
+  one answers 409 `REPAIR_IN_PROGRESS`, and with `autoMigrate` only one
+  booting process repairs while the others log `Boot repair skipped`.
+- An editor save that filled an empty write-once field while a repair or import
+  ran on another process could overwrite the repaired or imported value and
+  still answer 200. The save now waits for the repair and gets
+  `IMMUTABLE_UUID`.
+- Admin rate limits were counted per process, so 8 processes allowed 8 times
+  the limit. They now hold across all processes.
+
+### Upgrade notes
+
+1. The database user needs permission to create tables at startup (as for
+   Strapi's own schema sync).
+2. With several processes, size the connection pool for all of them
+   (`processes x pool.max` below the database's `max_connections`).
+
 # [2.0.0](https://github.com/Schero94/strapi-auto-uuid/compare/v1.1.0...v2.0.0) (2026-11-07)
 
 
@@ -33,9 +78,9 @@ POST /field-uuid/check-duplicate removed) this is a major release.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
-## [Unreleased]
+## 2.0.0 upgrade notes and details
 
-Next release: **2.0.0** (major). The write rules are stricter (client UUIDs
+Release **2.0.0** (major). The write rules are stricter (client UUIDs
 on non-editable fields are replaced, duplicates are rejected, case variants
 count as duplicates), one unused admin route was removed and imports are
 capped. Read the upgrade notes before updating. Auto UUID now saves reliably

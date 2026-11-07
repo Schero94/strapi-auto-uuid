@@ -48,3 +48,44 @@ jobs:
         run: npm pack --dry-run
       - name: Production audit (critical)
         run: npm audit --omit=dev --audit-level=critical
+
+  # Several Strapi processes on one database (Railway replicas, pm2 cluster):
+  # the PostgreSQL lock and rate-limit tests plus the 8-process race on
+  # SQLite and PostgreSQL. Synthetic data, local service container only.
+  multi-instance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: strapi
+          POSTGRES_DB: auto_uuid_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U strapi -d auto_uuid_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      AUTO_UUID_PG_URL: postgres://strapi@127.0.0.1:5432/auto_uuid_test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies (no lifecycle scripts)
+        run: npm ci --legacy-peer-deps --ignore-scripts
+      - name: Tests including PostgreSQL
+        run: npm test
+      - name: 8 processes on SQLite
+        run: npm run test:concurrency -- --client sqlite
+      - name: 8 processes on PostgreSQL
+        run: npm run test:concurrency -- --client postgres
