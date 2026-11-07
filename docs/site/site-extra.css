@@ -42,6 +42,96 @@ td code {
   grid-template-columns: repeat(2, minmax(0, 240px));
 }
 
+/* Hero screenshot right under the hero card. */
+.hero-shot {
+  max-width: 1080px;
+  margin: 1.4rem auto 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--white);
+  box-shadow: 0 24px 60px rgba(26, 32, 60, 0.14);
+}
+.hero-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Numbered quick-start steps. */
+.steps {
+  display: grid;
+  gap: 1.1rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+}
+.steps > li {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  gap: 0.9rem;
+  align-items: start;
+}
+.steps .number {
+  margin: 0;
+}
+.steps h3 {
+  margin: 0.2rem 0 0.4rem;
+  font-size: 1.02rem;
+}
+.steps p {
+  margin: 0.4rem 0 0;
+}
+.steps .code-card {
+  margin: 0.4rem 0 0;
+}
+
+.subhead {
+  margin: 1.6rem 0 0.7rem;
+  font-size: 1.1rem;
+}
+
+/* Short facts with a check mark. */
+.checklist {
+  display: grid;
+  gap: 0.45rem;
+  margin: 1rem 0;
+  padding: 0;
+  list-style: none;
+}
+.checklist li {
+  position: relative;
+  padding-left: 1.6rem;
+  color: var(--muted);
+}
+.checklist li::before {
+  position: absolute;
+  top: 0.55em;
+  left: 0.2rem;
+  width: 0.55rem;
+  height: 0.3rem;
+  border-bottom: 2px solid var(--cyan);
+  border-left: 2px solid var(--cyan);
+  transform: rotate(-45deg);
+  content: '';
+}
+
+/* Code blocks: keep long lines inside the card on phones. */
+.code-label {
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 560px) {
+  .hide-narrow {
+    display: none;
+  }
+  .hero-shot {
+    margin-top: 1rem;
+    border-radius: 12px;
+  }
+}
+
 @media (max-width: 820px) {
   /* The horizontal section nav must scroll inside its 1fr track instead of
      widening the page (it overflowed by 50 px at 390 and 120 px at 320). */
@@ -99,5 +189,11 @@ td code {
   .number {
     color: #e2dcff;
     background: #2e2560;
+  }
+  .hero-shot {
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  }
+  .card {
+    box-shadow: none;
   }
 }
