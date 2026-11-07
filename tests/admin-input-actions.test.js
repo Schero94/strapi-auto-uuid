@@ -161,6 +161,10 @@ describe('repair result summaries', () => {
     expect(describeError({ response: { status: 409, data: { error: {} } } }).id).toBe(
       'field-uuid.code.REPAIR_IN_PROGRESS'
     );
+    // Acceptance finding: a rate-limited preview said "Refresh the page".
+    expect(describeError({ response: { status: 429, data: { error: {} } } }).id).toBe(
+      'field-uuid.code.RATE_LIMITED'
+    );
     expect(describeError({ code: 'TARGET_HAS_VALUE' }).id).toBe('field-uuid.code.TARGET_HAS_VALUE');
     expect(describeError(new Error('x')).id).toBe('field-uuid.code.UNKNOWN');
     expect(summarizeErrors({ errorCounts: { TARGET_NOT_FOUND: 2 } })).toEqual([

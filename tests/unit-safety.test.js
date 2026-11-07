@@ -114,3 +114,25 @@ describe('bootstrap', () => {
     expect(strapi.log.error.mock.calls.flat().join(' ')).toContain(word);
   });
 });
+
+describe('rate limit middleware', () => {
+  it('answers 429 with a stable code and Retry-After once the window is used up', async () => {
+    const { default: rateLimit } = await import('../server/src/middlewares/rate-limit.js');
+    const strapi = { log: { warn: vi.fn() } };
+    const limit = rateLimit({ max: 1, window: 60_000 }, { strapi });
+    const ctx = () => ({
+      path: '/field-uuid/rate-test',
+      state: { user: { id: 42 } },
+      request: { ip: '203.0.113.7' },
+      set: vi.fn(),
+    });
+    const next = vi.fn();
+    await limit(ctx(), next);
+    const blocked = ctx();
+    await limit(blocked, next);
+    expect(next).toHaveBeenCalledOnce();
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.error.details.code).toBe('RATE_LIMITED');
+    expect(blocked.set).toHaveBeenCalledWith('Retry-After', expect.any(String));
+  });
+});

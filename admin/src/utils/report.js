@@ -26,6 +26,10 @@ export const CODE_MESSAGES = Object.freeze({
     id: getTranslation('code.REPAIR_IN_PROGRESS'),
     defaultMessage: 'Another repair or import is running. Try again when it has finished.',
   },
+  RATE_LIMITED: {
+    id: getTranslation('code.RATE_LIMITED'),
+    defaultMessage: 'Too many requests in a short time. Wait a minute, then try again.',
+  },
   INVALID_REQUEST: {
     id: getTranslation('code.INVALID_REQUEST'),
     defaultMessage: 'The request was rejected. Check the file or the selected options.',
@@ -80,7 +84,7 @@ export function describeError(error) {
   const code =
     error?.code ??
     payload?.details?.code ??
-    (error?.response?.status === 409 ? 'REPAIR_IN_PROGRESS' : undefined);
+    { 409: 'REPAIR_IN_PROGRESS', 429: 'RATE_LIMITED' }[error?.response?.status];
   return CODE_MESSAGES[code] ?? UNKNOWN_ERROR;
 }
 

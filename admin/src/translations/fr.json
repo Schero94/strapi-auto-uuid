@@ -22,6 +22,7 @@
   "code.INVALID_UUID_FIELD_CONFIG": "Un champ UUID a une version ou un préfixe non valide. Vérifiez-le dans le Content-Type Builder.",
   "code.REPAIR_FAILED": "La réparation a échoué et a été annulée. Aucune modification n'a été conservée.",
   "code.REPAIR_IN_PROGRESS": "Une autre réparation ou un import est en cours. Réessayez lorsqu'il sera terminé.",
+  "code.RATE_LIMITED": "Trop de requêtes en peu de temps. Attendez une minute, puis réessayez.",
   "code.SCAN_FAILED": "Un champ UUID n'a pas pu être vérifié. Aucune réparation n'a été lancée.",
   "code.TARGET_HAS_VALUE": "Une entrée a déjà un autre UUID. Les valeurs existantes ne sont jamais remplacées.",
   "code.TARGET_NOT_FOUND": "Une entrée du fichier n'existe plus.",

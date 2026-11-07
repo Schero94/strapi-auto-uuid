@@ -22,6 +22,7 @@
   "code.INVALID_UUID_FIELD_CONFIG": "A UUID field has an invalid version or prefix. Check it in the Content-Type Builder.",
   "code.REPAIR_FAILED": "The repair failed and was rolled back. No changes were kept.",
   "code.REPAIR_IN_PROGRESS": "Another repair or import is running. Try again when it has finished.",
+  "code.RATE_LIMITED": "Too many requests in a short time. Wait a minute, then try again.",
   "code.SCAN_FAILED": "A UUID field could not be checked. No repairs ran.",
   "code.TARGET_HAS_VALUE": "An entry already has a different UUID. Existing values are never replaced.",
   "code.TARGET_NOT_FOUND": "An entry from the file no longer exists.",

@@ -39,6 +39,9 @@ row, and the admin page was reworked within the existing design.
   does not manage these fields; the startup warning and README say so.
 - Focus returns to the generate button after the "Replace this UUID?"
   confirmation is closed.
+- A rate-limited request (429) now says "Too many requests in a short time.
+  Wait a minute, then try again." instead of "Something went wrong. Refresh
+  the page". The 429 body carries `details.code: 'RATE_LIMITED'`.
 - Refresh, Run check, Export UUIDs and Try again keep keyboard focus on
   their button. The buttons are disabled while they run, which dropped focus
   to the page body.

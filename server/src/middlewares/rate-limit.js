@@ -50,7 +50,7 @@ const rateLimit = (cfg = {}, { strapi }) => {
           status: 429,
           name: 'TooManyRequestsError',
           message: 'Too many requests. Please slow down.',
-          details: { retryAfter: retryAfterSec },
+          details: { code: 'RATE_LIMITED', retryAfter: retryAfterSec },
         },
       };
       return;

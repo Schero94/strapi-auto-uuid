@@ -22,6 +22,7 @@
   "code.INVALID_UUID_FIELD_CONFIG": "Un campo UUID tiene una versión o un prefijo no válidos. Revíselo en el Content-Type Builder.",
   "code.REPAIR_FAILED": "La reparación falló y se revirtió. No se conservó ningún cambio.",
   "code.REPAIR_IN_PROGRESS": "Hay otra reparación o importación en curso. Vuelva a intentarlo cuando termine.",
+  "code.RATE_LIMITED": "Demasiadas solicitudes en poco tiempo. Espere un minuto y vuelva a intentarlo.",
   "code.SCAN_FAILED": "No se pudo comprobar un campo UUID. No se realizó ninguna reparación.",
   "code.TARGET_HAS_VALUE": "Una entrada ya tiene otro UUID. Los valores existentes nunca se sustituyen.",
   "code.TARGET_NOT_FOUND": "Una entrada del archivo ya no existe.",
