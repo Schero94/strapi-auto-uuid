@@ -1,3 +1,38 @@
+# [2.0.0](https://github.com/Schero94/strapi-auto-uuid/compare/v1.1.0...v2.0.0) (2026-11-07)
+
+
+### Bug Fixes
+
+* align CI installs with lockfile settings ([e8e1bc8](https://github.com/Schero94/strapi-auto-uuid/commit/e8e1bc8212de5b13a2c99f3559ad34357496707c))
+* close re-attack findings on clone, locales, case and import size ([45b03e4](https://github.com/Schero94/strapi-auto-uuid/commit/45b03e4fac4c051a8a6fe6489e770bc5856b1ee5))
+* explain rate-limited requests on the UUID page ([4ab784d](https://github.com/Schero94/strapi-auto-uuid/commit/4ab784dfcb91fb7b9cfb942c4f8f224941c39758))
+* keep focus on settings actions after they finish ([d18978e](https://github.com/Schero94/strapi-auto-uuid/commit/d18978eefc94165bd4372d1742a65b747f414e24))
+* keep Strapi runtime packages external and align dependencies with 5.61 ([02b8066](https://github.com/Schero94/strapi-auto-uuid/commit/02b8066252ccfbb3a6abffbe3440d5fc6eb9d428))
+* resolve UUID update targets inside the transaction and tighten create rules ([a6d9b8a](https://github.com/Schero94/strapi-auto-uuid/commit/a6d9b8a6701c9d6d3ee9d0c9d9d6ac50ebeb6952))
+* return focus after repairs and label alert close buttons ([3012d8a](https://github.com/Schero94/strapi-auto-uuid/commit/3012d8a07e5ad5e8a92199c14e7daaee61f7a8ff))
+* scan every row in repairs, serialise them and bound imports ([e5db25c](https://github.com/Schero94/strapi-auto-uuid/commit/e5db25cda6df94b999eadeb39943a370b4653d5f))
+* share one value across the locales of a cloned document ([989847b](https://github.com/Schero94/strapi-auto-uuid/commit/989847b1fa3fba4977e07941089177e7e7c47186))
+* show UUID errors on the field, fill component fields and return focus ([42abc2c](https://github.com/Schero94/strapi-auto-uuid/commit/42abc2ce7e605bffc0c3c51e74a77e2ac5b6ffb2))
+* validate UUID field options and guard repair writes ([081de83](https://github.com/Schero94/strapi-auto-uuid/commit/081de8332a7307db7d4c54edab5fb7ab865f8a20))
+
+
+### Features
+
+* modernize Auto UUID admin and release tooling ([64ac368](https://github.com/Schero94/strapi-auto-uuid/commit/64ac3688482ac9744d18f22f1f47b68e9affa445))
+* rework the UUID management page and field input within the existing design ([b6551dd](https://github.com/Schero94/strapi-auto-uuid/commit/b6551ddca3317b35ff3359f26a8b0184cc39b584))
+
+
+### BREAKING CHANGES
+
+* values that differ from another document's only in letter
+case are rejected as DUPLICATE_UUID and new values are stored in lowercase;
+POST /field-uuid/migration/import accepts at most 10,000 entries. Together
+with the earlier changes on this branch (server-generated values replace
+client values on non-editable fields, duplicate creates return 400,
+POST /field-uuid/check-duplicate removed) this is a major release.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
 ## [Unreleased]
 
 Next release: **2.0.0** (major). The write rules are stricter (client UUIDs
