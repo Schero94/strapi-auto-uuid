@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Schero94/strapi-auto-uuid/main/docs/site/img/icon.svg" alt="Auto UUID icon" width="96" height="96" />
+</p>
+
 # Auto UUID for Strapi 5
 
 Give every Strapi 5 entry a UUID that the server generates, that no other document can reuse and that nobody changes by accident. Add the field in the Content-Type Builder, save an entry, and the value is there, whether the entry came from the admin, REST, GraphQL or the Document Service.
