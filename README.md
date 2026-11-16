@@ -111,7 +111,7 @@ Super Admins see **Settings > Auto UUID > UUID management** right away. Other ro
 
 | Plugin version | Strapi                                                                                  | Node.js                  | Database                                                                      |
 | -------------- | --------------------------------------------------------------------------------------- | ------------------------ | ----------------------------------------------------------------------------- |
-| 2.x            | 5.24 or newer; acceptance host: Strapi 5.61.0                                           | 22.12 or newer, up to 26 | SQLite, PostgreSQL, MySQL 8 / MariaDB. Tests run on SQLite and PostgreSQL 16. |
+| 2.x            | 5.24 or newer; acceptance host: Strapi 5.62.0                                           | 22.12 or newer, up to 26 | SQLite, PostgreSQL, MySQL 8 / MariaDB. Tests run on SQLite and PostgreSQL 16. |
 | 1.x            | 5.x                                                                                     | as required by Strapi    | Any database Strapi supports                                                  |
 | Strapi 4       | use [Cringe-Studio/strapi-auto-uuid](https://github.com/Cringe-Studio/strapi-auto-uuid) |                          |                                                                               |
 
