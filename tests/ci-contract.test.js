@@ -26,9 +26,12 @@ test('the Node matrix covers every even Node major in engines.node', () => {
 });
 
 test('a CI job installs the @strapi/strapi peer floor', () => {
-  const floor = pkg.peerDependencies['@strapi/strapi'].replace(/^[\^~]/, '');
-  const job = (ci.match(/STRAPI_FLOOR:\s*([\d.]+)/) || [])[1];
-  assert.equal(job, floor);
+  // The job may use a later patch of the floor's minor version when npm has
+  // deprecated the first patches, but never a later minor.
+  const floor = pkg.peerDependencies['@strapi/strapi'].replace(/^[\^~]/, '').split('.');
+  const job = ((ci.match(/STRAPI_FLOOR:\s*([\d.]+)/) || [])[1] || '').split('.');
+  assert.deepEqual(job.slice(0, 2), floor.slice(0, 2));
+  assert.ok(Number(job[2]) >= Number(floor[2]), `job ${job.join('.')} below floor`);
   assert.match(ci, /"@strapi\/strapi@\$STRAPI_FLOOR"/);
 });
 

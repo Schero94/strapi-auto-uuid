@@ -58,13 +58,14 @@ jobs:
 
   # peerDependencies allow @strapi/strapi ^5.24.0: run the tests and the build
   # against that floor, not only against the devDependency version. Strapi
-  # 5.24 supports Node 22 at most. Keep STRAPI_FLOOR equal to the peer floor
-  # (tests/ci-contract.test.js checks it).
+  # 5.24 supports Node 22 at most. npm marks 5.24.0 and 5.24.1 deprecated
+  # (build issue), so the job uses 5.24.2, the oldest usable release of the
+  # floor's minor version (tests/ci-contract.test.js checks the minor).
   strapi-floor:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      STRAPI_FLOOR: 5.24.0
+      STRAPI_FLOOR: 5.24.2
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
