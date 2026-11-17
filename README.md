@@ -8,10 +8,10 @@ Give every Strapi 5 entry a UUID that the server generates, that no other docume
 
 [![npm version](https://img.shields.io/npm/v/strapi-auto-uuid-v5.svg)](https://www.npmjs.com/package/strapi-auto-uuid-v5)
 [![npm downloads](https://img.shields.io/npm/dm/strapi-auto-uuid-v5.svg)](https://www.npmjs.com/package/strapi-auto-uuid-v5)
-[![CI](https://github.com/Schero94/strapi-auto-uuid/actions/workflows/ci.yml/badge.svg)](https://github.com/Schero94/strapi-auto-uuid/actions/workflows/ci.yml)
+[![CI build status](https://img.shields.io/github/actions/workflow/status/Schero94/strapi-auto-uuid/ci.yml?branch=main&label=CI&logo=github)](https://github.com/Schero94/strapi-auto-uuid/actions/workflows/ci.yml?query=branch%3Amain)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/Schero94/strapi-auto-uuid/blob/main/LICENSE)
-[![Strapi 5.24+](https://img.shields.io/badge/Strapi-5.24%2B-4945FF.svg)](https://strapi.io)
-[![Docs](https://img.shields.io/badge/docs-project%20site-6d4aff.svg)](https://schero94.github.io/strapi-auto-uuid/)
+[![Strapi 5.24+](https://img.shields.io/badge/Strapi-5.24%2B-4945FF.svg)](https://github.com/Schero94/strapi-auto-uuid#compatibility)
+[![Documentation site](https://img.shields.io/badge/docs-project%20site-6d4aff.svg)](https://schero94.github.io/strapi-auto-uuid/)
 
 Live docs: https://schero94.github.io/strapi-auto-uuid/
 
