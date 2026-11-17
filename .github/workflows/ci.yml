@@ -1,10 +1,15 @@
-# Checks every pull request and manual run: lint, formatting, tests (including
-# the SQLite lifecycle and repair suites), build and package verification on
-# the Node versions Strapi 5.62 supports.
+# Checks every pull request, every push to main and manual runs: lint,
+# formatting, tests (including the SQLite lifecycle and repair suites), build
+# and package verification on every Node major in engines.node (Strapi 5.62
+# supports 22 to 26), plus tests and build against the oldest Strapi the
+# peerDependencies allow.
 name: CI
 
 on:
   pull_request:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -12,7 +17,9 @@ permissions:
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded PR runs, but let every run on main finish so the badge
+  # always reflects the latest commit.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
@@ -21,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['22', '24']
+        node: ['22', '24', '26']
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -48,6 +55,39 @@ jobs:
         run: npm pack --dry-run
       - name: Production audit (critical)
         run: npm audit --omit=dev --audit-level=critical
+
+  # peerDependencies allow @strapi/strapi ^5.24.0: run the tests and the build
+  # against that floor, not only against the devDependency version. Strapi
+  # 5.24 supports Node 22 at most. npm marks 5.24.0 and 5.24.1 deprecated
+  # (build issue), so the job uses 5.24.2, the oldest usable release of the
+  # floor's minor version (tests/ci-contract.test.js checks the minor).
+  strapi-floor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      STRAPI_FLOOR: 5.24.2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies (no lifecycle scripts)
+        run: npm ci --legacy-peer-deps --ignore-scripts
+      - name: Install the Strapi peer floor
+        run: >-
+          npm install --no-save --legacy-peer-deps --ignore-scripts --no-audit --no-fund
+          "@strapi/strapi@$STRAPI_FLOOR" "@strapi/database@$STRAPI_FLOOR" "@strapi/utils@$STRAPI_FLOOR"
+      - name: Show the installed Strapi versions
+        run: npm ls @strapi/strapi @strapi/database @strapi/utils --depth=0 || true
+      - name: Tests
+        run: npm test
+      - name: Build
+        run: npm run build
 
   # Several Strapi processes on one database (Railway replicas, pm2 cluster):
   # the PostgreSQL lock and rate-limit tests plus the 8-process race on

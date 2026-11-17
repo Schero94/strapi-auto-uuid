@@ -622,7 +622,7 @@ npm run build             # strapi-plugin build + bundle checks (externals, chun
 npm run verify            # strapi-plugin verify
 ```
 
-Use [Conventional Commits](https://www.conventionalcommits.org/): `fix:` makes a patch release, `feat:` a minor one, and a `BREAKING CHANGE:` footer a major one. Add your change to the `[Unreleased]` section of the [CHANGELOG](https://github.com/Schero94/strapi-auto-uuid/blob/main/CHANGELOG.md). Pull requests run lint, format check, tests, build and package checks on Node.js 22 and 24, plus the PostgreSQL and 8-process tests.
+Use [Conventional Commits](https://www.conventionalcommits.org/): `fix:` makes a patch release, `feat:` a minor one, and a `BREAKING CHANGE:` footer a major one. Add your change to the `[Unreleased]` section of the [CHANGELOG](https://github.com/Schero94/strapi-auto-uuid/blob/main/CHANGELOG.md). Pull requests run lint, format check, tests, build and package checks on Node.js 22, 24 and 26, against the oldest supported Strapi minor (5.24), plus the PostgreSQL and 8-process tests. CI also runs on every push to `main`.
 
 ## Maintenance, languages and license
 
