@@ -1,4 +1,10 @@
-## [Unreleased]
+## [2.1.2](https://github.com/Schero94/strapi-auto-uuid/compare/v2.1.1...v2.1.2) (2026-11-17)
+
+
+### Bug Fixes
+
+* **readme:** make images and layout work on the Strapi marketplace ([#10](https://github.com/Schero94/strapi-auto-uuid/issues/10)) ([bda7ce8](https://github.com/Schero94/strapi-auto-uuid/commit/bda7ce81da3aba89199590d5a3ac329713b9b1e0))
+
 
 ### Fixed
 
