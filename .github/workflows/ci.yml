@@ -1,6 +1,6 @@
 # Checks every pull request and manual run: lint, formatting, tests (including
 # the SQLite lifecycle and repair suites), build and package verification on
-# the Node versions Strapi 5.61 supports.
+# the Node versions Strapi 5.62 supports.
 name: CI
 
 on:

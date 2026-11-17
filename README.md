@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Schero94/strapi-auto-uuid/main/docs/site/img/icon.svg" alt="Auto UUID icon" width="96" height="96" />
+  <img src="https://schero94.github.io/strapi-auto-uuid/img/icon-128.png" alt="Auto UUID icon" width="96" height="96" />
 </p>
 
 # Auto UUID for Strapi 5
@@ -15,7 +15,7 @@ Give every Strapi 5 entry a UUID that the server generates, that no other docume
 
 Live docs: https://schero94.github.io/strapi-auto-uuid/
 
-![UUID management page in the Strapi admin panel with counts per content type and repair actions](https://raw.githubusercontent.com/Schero94/strapi-auto-uuid/main/pics/settings-light.png)
+![UUID management page in the Strapi admin panel with counts per content type and repair actions](https://schero94.github.io/strapi-auto-uuid/img/settings-light.webp)
 
 ```text
 POST /api/tickets   { "data": { "title": "Printer offline" } }
@@ -59,17 +59,23 @@ This is the Strapi 5 continuation of [Cringe-Studio/strapi-auto-uuid](https://gi
 
 ## Screenshots
 
-All screenshots use synthetic data.
+All screenshots use synthetic data. The [gallery on the project site](https://schero94.github.io/strapi-auto-uuid/#gallery) also shows dark mode and the phone layout.
 
-| UUID management                                                                                                                                                   | Repair preview                                                                                                                                             |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ![UUID management page with counts and repair actions](https://raw.githubusercontent.com/Schero94/strapi-auto-uuid/main/pics/settings-light.png)                  | ![Repair all dialog with options and a preview](https://raw.githubusercontent.com/Schero94/strapi-auto-uuid/main/pics/repair-dialog-light.png)             |
-| **Editable field (copy and generate)**                                                                                                                            | **Locked fields, dark mode**                                                                                                                               |
-| ![Content Manager entry with an editable UUID field](https://raw.githubusercontent.com/Schero94/strapi-auto-uuid/main/pics/field-editable-light.png)              | ![Content Manager entry with locked UUID fields in dark mode](https://raw.githubusercontent.com/Schero94/strapi-auto-uuid/main/pics/field-locked-dark.png) |
-| **Field options in the Content-Type Builder**                                                                                                                     | **UUID management, dark mode**                                                                                                                             |
-| ![Content-Type Builder dialog with UUID version and prefix](https://raw.githubusercontent.com/Schero94/strapi-auto-uuid/main/pics/content-type-builder-light.png) | ![UUID management page in dark mode](https://raw.githubusercontent.com/Schero94/strapi-auto-uuid/main/pics/settings-dark.png)                              |
-| **Mobile, light**                                                                                                                                                 | **Mobile, dark**                                                                                                                                           |
-| ![UUID management page on a phone](https://raw.githubusercontent.com/Schero94/strapi-auto-uuid/main/pics/settings-mobile-light.png)                               | ![UUID management page on a phone in dark mode](https://raw.githubusercontent.com/Schero94/strapi-auto-uuid/main/pics/settings-mobile-dark.png)            |
+**Repair preview.** Choose what to repair, check the preview, then confirm.
+
+![Repair all dialog with options and a preview](https://schero94.github.io/strapi-auto-uuid/img/repair-dialog-light.webp)
+
+**Editable field.** Copy the value or generate a new one in the Content Manager.
+
+![Content Manager entry with an editable UUID field](https://schero94.github.io/strapi-auto-uuid/img/field-editable-light.webp)
+
+**Field options.** Pick UUID v4 or v7 and an optional prefix in the Content-Type Builder.
+
+![Content-Type Builder dialog with UUID version and prefix](https://schero94.github.io/strapi-auto-uuid/img/content-type-builder-light.webp)
+
+**Dark mode.** The UUID management page follows the admin theme.
+
+![UUID management page in dark mode](https://schero94.github.io/strapi-auto-uuid/img/settings-dark.webp)
 
 ## Quick start
 
@@ -109,13 +115,11 @@ Super Admins see **Settings > Auto UUID > UUID management** right away. Other ro
 
 ## Compatibility
 
-| Plugin version | Strapi                                                                                  | Node.js                  | Database                                                                      |
-| -------------- | --------------------------------------------------------------------------------------- | ------------------------ | ----------------------------------------------------------------------------- |
-| 2.x            | 5.24 or newer; acceptance host: Strapi 5.62.0                                           | 22.12 or newer, up to 26 | SQLite, PostgreSQL, MySQL 8 / MariaDB. Tests run on SQLite and PostgreSQL 16. |
-| 1.x            | 5.x                                                                                     | as required by Strapi    | Any database Strapi supports                                                  |
-| Strapi 4       | use [Cringe-Studio/strapi-auto-uuid](https://github.com/Cringe-Studio/strapi-auto-uuid) |                          |                                                                               |
+- **Plugin 2.x:** Strapi 5.24 or newer (acceptance host: Strapi 5.62.0), Node.js 22.12 or newer up to 26, and SQLite, PostgreSQL or MySQL 8 / MariaDB. Tests run on SQLite and PostgreSQL 16.
+- **Plugin 1.x:** any Strapi 5.x, the Node.js versions Strapi requires and any database Strapi supports.
+- **Strapi 4:** use [Cringe-Studio/strapi-auto-uuid](https://github.com/Cringe-Studio/strapi-auto-uuid).
 
-Package managers: a fresh Strapi 5.61 app installs the plugin without a single peer dependency warning from this package on Yarn 1.22, npm 11 and pnpm 12. The plugin needs nothing beyond what a Strapi app already has:
+Package managers: a fresh Strapi 5.62 app installs the plugin without a single peer dependency warning from this package on Yarn 1.22, npm 10 and pnpm 12. The plugin needs nothing beyond what a Strapi app already has:
 
 - Required peers, all in the Strapi app template: `@strapi/strapi`, `react`, `react-dom`, `react-router-dom`, `styled-components`.
 - Optional peers, which Strapi installs itself: `@strapi/design-system`, `@strapi/icons`, `react-intl`.
@@ -125,14 +129,12 @@ Package managers: a fresh Strapi 5.61 app installs the plugin without a single p
 
 Set these when you add or edit the field in the Content-Type Builder.
 
-| Option                  | Stored in the schema as            | Default | Effect                                                                                                                                                                                                 |
-| ----------------------- | ---------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| UUID version            | `options["uuid-version"]`          | `v4`    | `v4` is random. `v7` is time-sortable and recommended for new fields. Changing it later keeps existing values.                                                                                         |
-| Prefix                  | `options["uuid-prefix"]`           | none    | 1 to 16 letters, numbers, `_` or `-`, added before the UUID (`usr_018f...`).                                                                                                                           |
-| Unique values           | `unique`                           | on      | Strapi also checks uniqueness when an entry is published. This is **not** a database constraint; Strapi 5 does not create one for this option. The plugin rejects duplicates on every save either way. |
-| Private field           | `private`                          | off     | The field is not returned by the API.                                                                                                                                                                  |
-| Disable auto-generation | `options["disable-auto-generate"]` | off     | Editors enter the UUID themselves. Without manual editing it can be entered once and is then locked.                                                                                                   |
-| Allow manual editing    | `options["allow-edit"]`            | off     | Editors and API clients can set and change the UUID. When off, the server generates the value and nobody can change it.                                                                                |
+- **UUID version** (default `v4`, stored as `options["uuid-version"]`): `v4` is random. `v7` is time-sortable and recommended for new fields. Changing it later keeps existing values.
+- **Prefix** (default none, stored as `options["uuid-prefix"]`): 1 to 16 letters, numbers, `_` or `-`, added before the UUID (`usr_018f...`).
+- **Unique values** (default on, stored as `unique`): Strapi also checks uniqueness when an entry is published. This is **not** a database constraint; Strapi 5 does not create one for this option. The plugin rejects duplicates on every save either way.
+- **Private field** (default off, stored as `private`): the field is not returned by the API.
+- **Disable auto-generation** (default off, stored as `options["disable-auto-generate"]`): editors enter the UUID themselves. Without manual editing it can be entered once and is then locked.
+- **Allow manual editing** (default off, stored as `options["allow-edit"]`): editors and API clients can set and change the UUID. When off, the server generates the value and nobody can change it.
 
 ## Examples
 
@@ -180,7 +182,11 @@ Content-Type: application/json
 }
 ```
 
-Look an entry up by its UUID with a normal Strapi filter: `GET /api/tickets?filters[ticketId][$eq]=tkt_019a5f3c-8b2e-7d41-9c3a-5e2f1b7a4d10`.
+Look an entry up by its UUID with a normal Strapi filter:
+
+```http
+GET /api/tickets?filters[ticketId][$eq]=tkt_019a5f3c-8b2e-7d41-9c3a-5e2f1b7a4d10
+```
 
 ### Create from server code
 
@@ -273,23 +279,25 @@ module.exports = {
 };
 ```
 
-| Option               | Type                                     | Default  | Description                                                                                                                                                                                 |
-| -------------------- | ---------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `defaultVersion`     | `'v4' \| 'v7'`                           | `'v4'`   | Version for fields that do not set one.                                                                                                                                                     |
-| `autoGenerate`       | boolean                                  | `true`   | Generate values on create and fill empty fields on save. Per field, **Disable auto-generation** wins.                                                                                       |
-| `validateUniqueness` | boolean                                  | `true`   | Reject a value that another document already uses.                                                                                                                                          |
-| `maxRetryAttempts`   | integer, 1 to 10                         | `3`      | Retries when a generated value is already taken.                                                                                                                                            |
-| `autoMigrate`        | boolean                                  | `false`  | Repair empty, malformed and duplicate values at startup (see below).                                                                                                                        |
-| `logLevel`           | `'debug' \| 'info' \| 'warn' \| 'error'` | `'info'` | Minimum level of the plugin's log lines.                                                                                                                                                    |
-| `rateLimitStore`     | `'auto' \| 'database' \| 'memory'`       | `'auto'` | Where admin rate-limit counters live. `auto`: database on PostgreSQL and MySQL, memory on SQLite. See [Running several instances](#running-several-instances-railway-replicas-pm2-cluster). |
+- `defaultVersion` (`'v4'` or `'v7'`, default `'v4'`): version for fields that do not set one.
+- `autoGenerate` (boolean, default `true`): generate values on create and fill empty fields on save. Per field, **Disable auto-generation** wins.
+- `validateUniqueness` (boolean, default `true`): reject a value that another document already uses.
+- `maxRetryAttempts` (integer 1 to 10, default `3`): retries when a generated value is already taken.
+- `autoMigrate` (boolean, default `false`): repair empty, malformed and duplicate values at startup (see below).
+- `logLevel` (`'debug'`, `'info'`, `'warn'` or `'error'`, default `'info'`): minimum level of the plugin's log lines.
+- `rateLimitStore` (`'auto'`, `'database'` or `'memory'`, default `'auto'`): where admin rate-limit counters live. `auto` uses the database on PostgreSQL and MySQL and memory on SQLite. See [Running several instances](#running-several-instances-railway-replicas-pm2-cluster).
 
 `allowManualEdit` from 1.x is accepted but has no effect; use the per-field option. These settings are read from the config file at startup; there is no settings form for them in the admin.
 
 ### Environment variables
 
-| Name                                        | Required | Default | Effect                                                                                        |
-| ------------------------------------------- | -------- | ------- | --------------------------------------------------------------------------------------------- |
-| `STRAPI_AUTO_UUID_ALLOW_PRODUCTION_MIGRATE` | no       | unset   | Set to `true` to let `autoMigrate` run when `NODE_ENV=production`. Without it, it is refused. |
+The plugin reads one optional variable. It is unset by default:
+
+```bash
+STRAPI_AUTO_UUID_ALLOW_PRODUCTION_MIGRATE=true
+```
+
+Set it to `true` to let `autoMigrate` run when `NODE_ENV=production`. Without it, `autoMigrate` is refused in production.
 
 `autoMigrate` writes data on every start. It never replaces older-format values. With several processes only one of them runs the repair; the others log `Boot repair skipped`.
 
@@ -297,18 +305,26 @@ module.exports = {
 
 All routes are admin routes under `/field-uuid` on your Strapi host (for example `GET https://cms.example.test/field-uuid/stats`). They need an admin JWT (`Authorization: Bearer <admin JWT>`) and, except `/health`, the listed permission. The plugin has no Content API routes. Write endpoints default to a preview: send `"dryRun": false` to write.
 
-| Method and path          | Permission          | Limit per admin and minute | Body                                                              | Response                                                                 |
-| ------------------------ | ------------------- | -------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `GET /health`            | authenticated admin | none                       |                                                                   | `{ status: 'ok', plugin: 'field-uuid' }`                                 |
-| `GET /stats`             | `read`              | 20                         |                                                                   | Counts, per-field counts, UUID fields per content type                   |
-| `GET /models`            | `read`              | none                       |                                                                   | `{ models: { uid: [field] } }`                                           |
-| `GET /diagnose`          | `read`              | 5                          |                                                                   | Counts per field, no values                                              |
-| `GET /migration/status`  | `read`              | 10                         |                                                                   | Counts per field, no values                                              |
-| `POST /autofix`          | `migrate`           | 5                          | `{ dryRun? }`                                                     | Replace duplicates                                                       |
-| `POST /generate-missing` | `migrate`           | 5                          | `{ dryRun? }`                                                     | Fill empty fields                                                        |
-| `POST /migration/run`    | `migrate`           | 3                          | `{ dryRun?, fixEmpty?, fixInvalid?, fixDuplicates?, fixLegacy? }` | Repair result. At least one option must be true.                         |
-| `GET /migration/export`  | `export`            | 3                          |                                                                   | JSON attachment with all mappings                                        |
-| `POST /migration/import` | `import`            | 3                          | `{ mappings, dryRun? }`                                           | Import result. At most 10,000 entries, 100 content types, 20 fields each |
+Read routes (permission `read`, except `/health`):
+
+- `GET /health`: any authenticated admin, no limit. Returns `{ status: 'ok', plugin: 'field-uuid' }`.
+- `GET /stats`: 20 per minute. Counts, per-field counts and the UUID fields of each content type.
+- `GET /models`: no limit. Returns `{ models: { uid: [field] } }`.
+- `GET /diagnose`: 5 per minute. Counts per field, no values.
+- `GET /migration/status`: 10 per minute. Counts per field, no values.
+
+Repair routes (permission `migrate`):
+
+- `POST /autofix`: 5 per minute. Body `{ dryRun? }`. Replaces duplicates.
+- `POST /generate-missing`: 5 per minute. Body `{ dryRun? }`. Fills empty fields.
+- `POST /migration/run`: 3 per minute. Body `{ dryRun?, fixEmpty?, fixInvalid?, fixDuplicates?, fixLegacy? }`. Returns the repair result. At least one option must be true.
+
+Export and import:
+
+- `GET /migration/export` (permission `export`): 3 per minute. A JSON attachment with all mappings.
+- `POST /migration/import` (permission `import`): 3 per minute. Body `{ mappings, dryRun? }`. Returns the import result. At most 10,000 entries, 100 content types and 20 fields each.
+
+Limits count per admin and minute.
 
 Status codes: 400 for an invalid body, 401 without a valid admin JWT, 403 without the permission, 409 `REPAIR_IN_PROGRESS` while another repair or import runs on any instance, 429 when the limit is reached. Diagnostic and repair responses never contain documentIds or UUID values; only the export does. With `rateLimitStore: 'database'` (the default on PostgreSQL and MySQL) the limits hold across all instances.
 
@@ -383,12 +399,10 @@ The response has `imported`, `skipped`, `unchanged`, `errorCounts` (per code) an
 
 **Settings > Administration Panel > Roles > Plugins > Auto UUID.** Super Admins have all four. Give other roles only what they need.
 
-| Action UID                   | Label in the role editor                                                  | Allows                                                                                              |
-| ---------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `plugin::field-uuid.read`    | Read UUID status and diagnostics                                          | The settings page, counts and the check (`/stats`, `/models`, `/diagnose`, `/migration/status`)     |
-| `plugin::field-uuid.migrate` | Repair UUIDs (replace duplicates and malformed values, fill empty fields) | Repairs (`/autofix`, `/generate-missing`, `/migration/run`)                                         |
-| `plugin::field-uuid.export`  | Export all UUID mappings of every content type                            | Download every documentId and UUID of every content type, regardless of Content Manager permissions |
-| `plugin::field-uuid.import`  | Import UUID mappings into empty fields                                    | Fill empty UUID fields from a file                                                                  |
+- `plugin::field-uuid.read`, shown as "Read UUID status and diagnostics": the settings page, counts and the check (`/stats`, `/models`, `/diagnose`, `/migration/status`).
+- `plugin::field-uuid.migrate`, shown as "Repair UUIDs (replace duplicates and malformed values, fill empty fields)": repairs (`/autofix`, `/generate-missing`, `/migration/run`).
+- `plugin::field-uuid.export`, shown as "Export all UUID mappings of every content type": download every documentId and UUID of every content type, regardless of Content Manager permissions.
+- `plugin::field-uuid.import`, shown as "Import UUID mappings into empty fields": fill empty UUID fields from a file.
 
 The settings link and each button are shown only to roles that have the permission, and every route checks the permission again on the server. Editing the field in the Content Manager follows your normal Content Manager permissions. The plugin adds no Users & Permissions (Content API) permissions.
 
@@ -527,23 +541,25 @@ Each process reads the UUID fields and their options once at startup. During a r
 
 ### Verify it
 
-`npm run test:concurrency` starts 8 Node processes against one database and races the cases above. Run it against PostgreSQL with `AUTO_UUID_PG_URL=postgres://user@host:5432/db npm run test:concurrency -- --client postgres`.
+`npm run test:concurrency` starts 8 Node processes against one database and races the cases above. Run it against PostgreSQL with:
+
+```bash
+AUTO_UUID_PG_URL=postgres://user@host:5432/db npm run test:concurrency -- --client postgres
+```
 
 ## Troubleshooting and FAQ
 
-| Symptom                                                            | Cause                                                                | Fix                                                                                                                       |
-| ------------------------------------------------------------------ | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| The UUID field is missing in the Content-Type Builder              | Wrong plugin key, or the admin was not rebuilt                       | Use the key `field-uuid` and run `npm run build`.                                                                         |
-| Startup fails with `Invalid plugin configuration at '...'`         | Unknown key or wrong type in `config/plugins`                        | Fix the named key; see [Plugin configuration](#plugin-configuration).                                                     |
-| 400 `IMMUTABLE_UUID`: "UUID field '...' is immutable"              | The field does not allow manual editing                              | Turn on **Allow manual editing** if editors or API clients must change it.                                                |
-| A value sent on create was replaced                                | Manual editing is off, so the server generates the value             | Turn on **Allow manual editing** for fields that clients fill.                                                            |
-| 400 `DUPLICATE_UUID`                                               | Another document uses the value, possibly in other letter case       | Send a new value, or leave the field empty so the server generates one.                                                   |
-| "Entity could not be cloned" when using Duplicate in the list view | Strapi refuses its quick clone for any attribute with `unique: true` | Open the entry and use the clone page, or turn off **Unique values** (the plugin still rejects duplicates on every save). |
-| The Import dialog says the file is larger than 1 MB                | Strapi's JSON body limit                                             | Export again. The export is split into files that each fit one import. Import the parts one after another.                |
-| 409 "Another UUID repair or import is already running"             | A repair or import runs on this or another instance                  | Wait until it has finished, then retry.                                                                                   |
-| 429 "Too many requests. Please slow down."                         | Per-admin limit (see [Admin API](#admin-api))                        | Wait a minute.                                                                                                            |
-| No **Auto UUID** entry under Settings                              | The role lacks `plugin::field-uuid.read`                             | Grant it in the role editor.                                                                                              |
-| Log line `Rate-limit table unavailable`                            | The database user cannot create the plugin table                     | Grant create-table rights. On a single instance, per-process counters are fine.                                           |
+- **The UUID field is missing in the Content-Type Builder.** The plugin key is wrong, or the admin was not rebuilt. Use the key `field-uuid` and run `npm run build`.
+- **Startup fails with `Invalid plugin configuration at '...'`.** A key in `config/plugins` is unknown or has the wrong type. Fix the named key; see [Plugin configuration](#plugin-configuration).
+- **400 `IMMUTABLE_UUID`: "UUID field '...' is immutable".** The field does not allow manual editing. Turn on **Allow manual editing** if editors or API clients must change it.
+- **A value sent on create was replaced.** Manual editing is off, so the server generates the value. Turn on **Allow manual editing** for fields that clients fill.
+- **400 `DUPLICATE_UUID`.** Another document uses the value, possibly in other letter case. Send a new value, or leave the field empty so the server generates one.
+- **"Entity could not be cloned" when using Duplicate in the list view.** Strapi refuses its quick clone for any attribute with `unique: true`. Open the entry and use the clone page, or turn off **Unique values** (the plugin still rejects duplicates on every save).
+- **The Import dialog says the file is larger than 1 MB.** That is Strapi's JSON body limit. Export again: the export is split into files that each fit one import. Import the parts one after another.
+- **409 "Another UUID repair or import is already running".** A repair or import runs on this or another instance. Wait until it has finished, then retry.
+- **429 "Too many requests. Please slow down."** You reached the per-admin limit (see [Admin API](#admin-api)). Wait a minute.
+- **No Auto UUID entry under Settings.** The role lacks `plugin::field-uuid.read`. Grant it in the role editor.
+- **Log line `Rate-limit table unavailable`.** The database user cannot create the plugin table. Grant create-table rights. On a single instance, per-process counters are fine.
 
 **Does the plugin manage UUID fields inside components?** Only in the admin: an empty one is filled when the component is shown. The server does not generate, validate or repair them.
 

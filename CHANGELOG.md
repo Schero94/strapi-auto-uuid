@@ -1,3 +1,13 @@
+## [Unreleased]
+
+### Fixed
+
+- The README now reads well on the Strapi marketplace and on npm. Images load
+  from the project site (GitHub Pages) instead of a branch URL, the screenshot
+  gallery shows four full-width images instead of eight small thumbnails (the
+  full gallery stays on the project site), and wide tables became lists, so a phone no longer scrolls the page sideways.
+- The README states the package-manager check for Strapi 5.62 (it said 5.61).
+
 ## [2.1.1](https://github.com/Schero94/strapi-auto-uuid/compare/v2.1.0...v2.1.1) (2026-11-07)
 
 
