@@ -612,7 +612,7 @@ Bug reports and pull requests are welcome.
 Local setup and checks:
 
 ```bash
-npm ci --legacy-peer-deps
+npm ci
 npm run lint              # ESLint 10 flat config
 npm run format:check      # Prettier
 npm test                  # Vitest, including lifecycle and repair tests on a real SQLite database
