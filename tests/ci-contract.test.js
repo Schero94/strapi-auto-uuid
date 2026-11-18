@@ -43,8 +43,13 @@ test('workflows install from the lockfile without --legacy-peer-deps', () => {
   // The lockfile is generated with full peer resolution (npm 10), so plain
   // `npm ci` works on npm 10, 11 and 12. --legacy-peer-deps would hide a
   // regenerated lockfile that npm ci without the flag rejects again.
+  // One exception: the informational React 19 job swaps React with
+  // `npm install --no-save` after `npm ci`. React 19 is outside the peer range
+  // on purpose, and neither plain npm nor --force gives a usable tree there.
+  const react19 =
+    /^ {8}run: npm install --no-save --legacy-peer-deps --ignore-scripts react@19 react-dom@19$/m;
   for (const file of ['ci.yml', 'release.yml', 'dependency-auto-merge.yml']) {
-    const text = readFileSync(join(root, '.github/workflows', file), 'utf8');
+    const text = readFileSync(join(root, '.github/workflows', file), 'utf8').replace(react19, '');
     assert.doesNotMatch(text, /--legacy-peer-deps/, file);
     assert.match(text, /run: npm ci --ignore-scripts/, file);
   }

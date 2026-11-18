@@ -617,10 +617,13 @@ npm run lint              # ESLint 10 flat config
 npm run format:check      # Prettier
 npm test                  # Vitest, including lifecycle and repair tests on a real SQLite database
                           # (set AUTO_UUID_PG_URL to also run the PostgreSQL tests)
+npm run test:admin        # admin entry points in React StrictMode (Vitest, jsdom, fake network)
 npm run test:concurrency  # 8 processes on one database (SQLite, or PostgreSQL with --client postgres)
 npm run build             # strapi-plugin build + bundle checks (externals, chunk size)
 npm run verify            # strapi-plugin verify
 ```
+
+`npm run test:admin` renders every admin entry point (the UUID management page with its repair and import dialogs, the UUID field input in the Content Manager, the initializer) inside `React.StrictMode` with the providers of the Strapi admin, in jsdom with a fake network. It fails on a mutation sent twice, a read repeated without aborting the first one, an interval, listener, connection or observer left after unmount, and any console error or warning. A separate CI job runs the same tests against React 19 for information only: the plugin's peer range is React 18, like the Strapi 5 admin.
 
 Use [Conventional Commits](https://www.conventionalcommits.org/): `fix:` makes a patch release, `feat:` a minor one, and a `BREAKING CHANGE:` footer a major one. Add your change to the `[Unreleased]` section of the [CHANGELOG](https://github.com/Schero94/strapi-auto-uuid/blob/main/CHANGELOG.md). Pull requests run lint, format check, tests, build and package checks on Node.js 22, 24 and 26, against the oldest supported Strapi minor (5.24), plus the PostgreSQL and 8-process tests. CI also runs on every push to `main`.
 

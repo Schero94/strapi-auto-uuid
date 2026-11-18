@@ -1,5 +1,6 @@
 # Checks every pull request, every push to main and manual runs: lint,
-# formatting, tests (including the SQLite lifecycle and repair suites), build
+# formatting, tests (including the SQLite lifecycle and repair suites), the
+# admin StrictMode tests (also against React 19, informational), build
 # and package verification on every Node major in engines.node (Strapi 5.63
 # supports 22 to 26), plus tests and build against the oldest Strapi the
 # peerDependencies allow.
@@ -47,6 +48,8 @@ jobs:
         run: npm run format:check
       - name: Tests
         run: npm test
+      - name: Admin StrictMode tests (React 18)
+        run: npm run test:admin
       - name: Build
         run: npm run build
       - name: Verify package
@@ -55,6 +58,37 @@ jobs:
         run: npm pack --dry-run
       - name: Production audit (critical)
         run: npm audit --omit=dev --audit-level=critical
+
+  # Informational: the peer range is React ^18, like the Strapi 5 admin, and
+  # stays so. This job runs the admin StrictMode tests against React 19 (RFC
+  # strapi/strapi#25739) to see problems before Strapi moves; a failure here
+  # does not block a pull request.
+  react-19:
+    name: Admin StrictMode tests on React 19 (informational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies (no lifecycle scripts)
+        run: npm ci --ignore-scripts
+      # React 19 is outside the peer range on purpose: plain npm refuses it and
+      # --force drops packages from the tree, so this one step skips the peer
+      # check (tests/ci-contract.test.js allows exactly this line).
+      - name: Install React 19 (not saved)
+        run: npm install --no-save --legacy-peer-deps --ignore-scripts react@19 react-dom@19
+      - name: Show installed React version
+        run: node -p "'react ' + require('react/package.json').version + ', react-dom ' + require('react-dom/package.json').version"
+      - name: Admin StrictMode tests (React 19)
+        run: npm run test:admin
 
   # peerDependencies allow @strapi/strapi ^5.24.0: run the tests and the build
   # against that floor, not only against the devDependency version. Strapi
