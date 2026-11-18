@@ -153,7 +153,7 @@ export const RepairDialog = ({
       <Box ref={wrapperRef} height="100%">
         <Modal.Trigger disabled={disabled}>{trigger}</Modal.Trigger>
       </Box>
-      <Modal.Content>
+      <Modal.Content aria-describedby={undefined}>
         <Modal.Header>
           <Modal.Title>{title}</Modal.Title>
         </Modal.Header>

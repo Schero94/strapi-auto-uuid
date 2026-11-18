@@ -1,3 +1,13 @@
+## [Unreleased]
+
+### Fixed
+
+- The repair and import dialogs of the UUID management page no longer log the Radix "Missing `Description`" warning (`aria-describedby={undefined}`; the description stays as visible text in the dialog body).
+
+### Tests
+
+- `npm run test:admin` (Vitest project `admin`, jsdom): StrictMode tests for every admin entry point (no duplicate requests, no leaked timers, listeners, connections or observers after unmount, no console errors or warnings), also run against React 19 in an informational CI job. `npm test` now runs the Vitest project `unit` only.
+
 ## [2.1.2](https://github.com/Schero94/strapi-auto-uuid/compare/v2.1.1...v2.1.2) (2026-11-17)
 
 

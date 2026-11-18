@@ -8,6 +8,7 @@
  * - Server and shared code (Node, ESM source bundled by @strapi/sdk-plugin):
  *   node globals and `strapi` as a readonly global.
  * - Root CommonJS entry files, tests and scripts: node globals.
+ * - Admin StrictMode harness (tests/admin): JSX, Node and browser (jsdom) globals, React Hooks.
  * - eslint-config-prettier last, so ESLint never fights Prettier.
  */
 
@@ -85,6 +86,19 @@ export default defineConfig([
       ecmaVersion: 'latest',
       sourceType: 'module',
       globals: { ...globals.node },
+    },
+  },
+
+  {
+    // Admin StrictMode harness and tests: Vitest project `admin` in jsdom.
+    name: 'auto-uuid/admin-strict-mode',
+    files: ['tests/admin/**/*.{mjs,jsx}'],
+    extends: [reactHooks.configs.flat.recommended],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      parserOptions: { ecmaFeatures: { jsx: true } },
+      globals: { ...globals.node, ...globals.browser },
     },
   },
 
