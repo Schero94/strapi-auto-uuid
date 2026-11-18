@@ -115,11 +115,11 @@ Super Admins see **Settings > Auto UUID > UUID management** right away. Other ro
 
 ## Compatibility
 
-- **Plugin 2.x:** Strapi 5.24 or newer (acceptance host: Strapi 5.62.0), Node.js 22.12 or newer up to 26, and SQLite, PostgreSQL or MySQL 8 / MariaDB. Tests run on SQLite and PostgreSQL 16.
+- **Plugin 2.x:** Strapi 5.24 or newer (acceptance host: Strapi 5.63.0), Node.js 22.12 or newer up to 26, and SQLite, PostgreSQL or MySQL 8 / MariaDB. Tests run on SQLite and PostgreSQL 16.
 - **Plugin 1.x:** any Strapi 5.x, the Node.js versions Strapi requires and any database Strapi supports.
 - **Strapi 4:** use [Cringe-Studio/strapi-auto-uuid](https://github.com/Cringe-Studio/strapi-auto-uuid).
 
-Package managers: a fresh Strapi 5.62 app installs the plugin without a single peer dependency warning from this package on Yarn 1.22, npm 10 and pnpm 12. The plugin needs nothing beyond what a Strapi app already has:
+Package managers: a fresh Strapi 5.63 app installs the plugin with npm 10 without a single peer dependency warning from this package (checked 2026-11-18); Yarn 1.22 and pnpm 12 were checked the same way on the previous Strapi minor. The plugin needs nothing beyond what a Strapi app already has:
 
 - Required peers, all in the Strapi app template: `@strapi/strapi`, `react`, `react-dom`, `react-router-dom`, `styled-components`.
 - Optional peers, which Strapi installs itself: `@strapi/design-system`, `@strapi/icons`, `react-intl`.
