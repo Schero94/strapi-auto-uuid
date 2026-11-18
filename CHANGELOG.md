@@ -1,4 +1,10 @@
-## [Unreleased]
+## [2.1.3](https://github.com/Schero94/strapi-auto-uuid/compare/v2.1.2...v2.1.3) (2026-11-18)
+
+
+### Bug Fixes
+
+* **admin:** opt the repair and import dialogs out of the Radix description warning ([#16](https://github.com/Schero94/strapi-auto-uuid/issues/16)) ([3b850fe](https://github.com/Schero94/strapi-auto-uuid/commit/3b850fe4a67153718a7dea5a14ee7a3e63667c27))
+
 
 ### Fixed
 
