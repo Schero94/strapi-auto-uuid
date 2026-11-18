@@ -43,7 +43,7 @@ jobs:
       - name: Install OIDC-capable npm CLI
         run: npm install --global npm@12.2.0 --ignore-scripts --no-audit --no-fund
       - name: Install dependencies (no lifecycle scripts)
-        run: npm ci --legacy-peer-deps --ignore-scripts
+        run: npm ci --ignore-scripts
       - name: Lint
         run: npm run lint
       - name: Format check

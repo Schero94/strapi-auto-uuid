@@ -40,7 +40,7 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - name: Install dependencies (no lifecycle scripts)
-        run: npm ci --legacy-peer-deps --ignore-scripts
+        run: npm ci --ignore-scripts
       - name: Lint
         run: npm run lint
       - name: Format check
@@ -77,10 +77,10 @@ jobs:
           node-version: '22'
           cache: npm
       - name: Install dependencies (no lifecycle scripts)
-        run: npm ci --legacy-peer-deps --ignore-scripts
+        run: npm ci --ignore-scripts
       - name: Install the Strapi peer floor
         run: >-
-          npm install --no-save --legacy-peer-deps --ignore-scripts --no-audit --no-fund
+          npm install --no-save --ignore-scripts --no-audit --no-fund
           "@strapi/strapi@$STRAPI_FLOOR" "@strapi/database@$STRAPI_FLOOR" "@strapi/utils@$STRAPI_FLOOR"
       - name: Show the installed Strapi versions
         run: npm ls @strapi/strapi @strapi/database @strapi/utils --depth=0 || true
@@ -122,7 +122,7 @@ jobs:
           node-version: '22'
           cache: npm
       - name: Install dependencies (no lifecycle scripts)
-        run: npm ci --legacy-peer-deps --ignore-scripts
+        run: npm ci --ignore-scripts
       - name: Tests including PostgreSQL
         run: npm test
       - name: 8 processes on SQLite

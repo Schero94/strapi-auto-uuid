@@ -38,3 +38,28 @@ test('a CI job installs the @strapi/strapi peer floor', () => {
 test('CI runs on push to main', () => {
   assert.match(ci, /^ {2}push:\n {4}branches:\n {6}- main$/m);
 });
+
+test('workflows install from the lockfile without --legacy-peer-deps', () => {
+  // The lockfile is generated with full peer resolution (npm 10), so plain
+  // `npm ci` works on npm 10, 11 and 12. --legacy-peer-deps would hide a
+  // regenerated lockfile that npm ci without the flag rejects again.
+  for (const file of ['ci.yml', 'release.yml', 'dependency-auto-merge.yml']) {
+    const text = readFileSync(join(root, '.github/workflows', file), 'utf8');
+    assert.doesNotMatch(text, /--legacy-peer-deps/, file);
+    assert.match(text, /run: npm ci --ignore-scripts/, file);
+  }
+});
+
+test('the lockfile keeps Strapi on date-fns 2 and gives date-fns 4 to @base-ui/react', () => {
+  // @strapi/* pin date-fns 2.30.0; @base-ui/react (via @strapi/design-system)
+  // has an optional peer date-fns ^4. A lockfile written with
+  // --legacy-peer-deps hoists 2.30.0 to the root and plain `npm ci` fails with
+  // "lock file's date-fns@2.30.0 does not satisfy date-fns@4.4.0".
+  const lock = JSON.parse(readFileSync(join(root, 'package-lock.json'), 'utf8'));
+  const root4 = lock.packages['node_modules/date-fns'];
+  assert.ok(root4, 'date-fns at the lockfile root');
+  assert.match(root4.version, /^4\./);
+  const nested = lock.packages['node_modules/@strapi/utils/node_modules/date-fns'];
+  assert.ok(nested, '@strapi/utils keeps its own date-fns');
+  assert.equal(nested.version, '2.30.0');
+});
