@@ -3,160 +3,275 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Auto UUID for Strapi 5 | UUID v4 and v7 custom field</title>
+    <title>Auto UUID for Strapi 5: UUID v4 and v7 custom field</title>
     <meta
       name="description"
-      content="Auto UUID for Strapi 5: a UUID v4 or v7 custom field generated on the server, unique across documents and locales, locked by default, with check, repair, export and import tools. Safe on Railway replicas and pm2 cluster."
+      content="Auto UUID for Strapi 5: a UUID v4 or v7 custom field filled on the server, unique across documents and locales, locked by default, with repair tools."
     />
-    <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#171b31" />
     <link rel="canonical" href="https://schero94.github.io/strapi-auto-uuid/" />
-    <link
-      rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%236d4aff'/%3E%3Ctext x='16' y='21' font-family='Arial' font-size='13' font-weight='700' fill='white' text-anchor='middle'%3EID%3C/text%3E%3C/svg%3E"
-    />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="author" content="Schero D." />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#12151d" />
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Auto UUID for Strapi 5" />
-    <meta property="og:title" content="Auto UUID for Strapi 5" />
+    <meta property="og:site_name" content="Auto UUID documentation" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:title" content="Auto UUID for Strapi 5: UUID v4 and v7 custom field" />
     <meta
       property="og:description"
-      content="UUID v4 and v7 custom field for Strapi 5: generated on save, unique across documents, locked by default, with repair, export and import tools."
+      content="UUID v4 and v7 custom field for Strapi 5: generated on save, unique across documents, locked by default, with check, repair, export and import tools."
     />
     <meta property="og:url" content="https://schero94.github.io/strapi-auto-uuid/" />
-    <meta
-      property="og:image"
-      content="https://schero94.github.io/strapi-auto-uuid/img/settings-light.webp"
-    />
-    <meta property="og:image:width" content="1440" />
-    <meta property="og:image:height" content="900" />
+    <meta property="og:image" content="https://schero94.github.io/strapi-auto-uuid/img/og.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <meta
       property="og:image:alt"
-      content="UUID management page of the Auto UUID plugin in the Strapi admin"
+      content="UUID management page of the Auto UUID plugin in the Strapi admin with counts for content types, UUID fields and entries"
     />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Auto UUID for Strapi 5" />
+    <meta name="twitter:title" content="Auto UUID for Strapi 5: UUID v4 and v7 custom field" />
     <meta
       name="twitter:description"
       content="UUID v4 and v7 custom field for Strapi 5, generated on the server and kept unique."
     />
-    <meta
-      name="twitter:image"
-      content="https://schero94.github.io/strapi-auto-uuid/img/settings-light.webp"
-    />
-    <script type="application/ld+json">
-      {
-        "@context": "https://schema.org",
-        "@type": "SoftwareSourceCode",
-        "name": "Auto UUID for Strapi 5",
-        "description": "Strapi 5 custom field that generates UUID v4 or v7 values on the server, keeps them unique and locked, and adds admin tools to check, repair, export and import them.",
-        "codeRepository": "https://github.com/Schero94/strapi-auto-uuid",
-        "programmingLanguage": "JavaScript",
-        "runtimePlatform": "Node.js",
-        "license": "https://opensource.org/licenses/MIT",
-        "url": "https://schero94.github.io/strapi-auto-uuid/"
-      }
-    </script>
+    <meta name="twitter:image" content="https://schero94.github.io/strapi-auto-uuid/img/og.jpg" />
     <link rel="icon" href="./img/icon.svg" type="image/svg+xml" />
     <link rel="icon" href="./img/icon-128.png" type="image/png" sizes="128x128" />
     <link rel="apple-touch-icon" href="./img/icon-512.png" />
+    <link rel="alternate" type="text/plain" href="./llms.txt" title="llms.txt" />
+    <link
+      rel="preload"
+      as="image"
+      href="./img/settings-light.webp"
+      type="image/webp"
+      fetchpriority="high"
+    />
     <link rel="stylesheet" href="./site.css" />
     <link rel="stylesheet" href="./site-extra.css" />
+    <script src="./site.js" defer></script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://schero94.github.io/strapi-auto-uuid/#software",
+            "name": "Auto UUID for Strapi 5",
+            "alternateName": "strapi-auto-uuid-v5",
+            "description": "Free Strapi 5 plugin that adds a UUID v4 or UUID v7 custom field: the server generates the value on create, keeps it unique across documents and locales, locks it by default, and an admin page checks, repairs, exports and imports UUIDs.",
+            "applicationCategory": "DeveloperApplication",
+            "applicationSubCategory": "Strapi plugin",
+            "operatingSystem": "Node.js 22+ / Strapi 5",
+            "softwareRequirements": "Strapi ^5.24.0, Node.js >=22.12.0 <=26.x.x",
+            "license": "https://opensource.org/licenses/MIT",
+            "isAccessibleForFree": true,
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+            "url": "https://schero94.github.io/strapi-auto-uuid/",
+            "downloadUrl": "https://www.npmjs.com/package/strapi-auto-uuid-v5",
+            "codeRepository": "https://github.com/Schero94/strapi-auto-uuid",
+            "screenshot": "https://schero94.github.io/strapi-auto-uuid/img/settings-light.webp",
+            "author": {
+              "@type": "Person",
+              "name": "Schero D.",
+              "url": "https://schero94.github.io/"
+            },
+            "sameAs": [
+              "https://github.com/Schero94/strapi-auto-uuid",
+              "https://www.npmjs.com/package/strapi-auto-uuid-v5",
+              "https://schero94.github.io/plugins/auto-uuid/"
+            ]
+          },
+          {
+            "@type": "BreadcrumbList",
+            "itemListElement": [
+              {
+                "@type": "ListItem",
+                "position": 1,
+                "name": "Schero94",
+                "item": "https://schero94.github.io/"
+              },
+              {
+                "@type": "ListItem",
+                "position": 2,
+                "name": "Plugins",
+                "item": "https://schero94.github.io/plugins/"
+              },
+              {
+                "@type": "ListItem",
+                "position": 3,
+                "name": "Auto UUID",
+                "item": "https://schero94.github.io/strapi-auto-uuid/"
+              }
+            ]
+          },
+          {
+            "@type": "FAQPage",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Is there a database unique constraint?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. Draft, published and locale rows of one document share a value, so a plain unique index is impossible. The plugin checks every save and serializes concurrent saves with database locks."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Why does Duplicate in the list view fail?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Strapi refuses its quick clone for unique attributes. Use the clone page of the entry, or turn off Unique values for the field."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "The import says the file is too large",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Export again: the export is split into files that each fit one import."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "What about fields inside components?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "The admin fills an empty one when the component is shown. The server does not generate, validate or repair them."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Do I need Redis?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. Locks and rate-limit counters live in the database."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Does it phone home?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. The plugin makes no network requests and has no license check."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to content</a>
     <header class="topbar">
       <div class="topbar-inner">
-        <a class="brand" href="#top" aria-label="Auto UUID home">
+        <a class="brand" href="#top" aria-label="Auto UUID documentation, back to top">
           <img class="brand-logo" src="./img/icon.svg" alt="" width="32" height="32" />
           <span>Auto UUID</span>
         </a>
-        <div class="top-links">
+        <nav class="top-links" aria-label="Project links">
+          <a href="#install">Install</a>
           <a href="https://github.com/Schero94/strapi-auto-uuid">GitHub</a>
           <a href="https://www.npmjs.com/package/strapi-auto-uuid-v5">npm</a>
-          <a
-            class="hide-narrow"
-            href="https://github.com/Schero94/strapi-auto-uuid/blob/main/CHANGELOG.md"
+          <a href="https://github.com/Schero94/strapi-auto-uuid/blob/main/CHANGELOG.md"
             >Changelog</a
           >
-        </div>
+        </nav>
       </div>
     </header>
 
     <div class="hero-wrap" id="top">
       <section class="hero" aria-labelledby="page-title">
-        <div class="hero-copy">
-          <span class="eyebrow">Strapi 5 custom field</span>
-          <h1 id="page-title">UUIDs that stay put</h1>
-          <p>
-            Add a UUID field in the Content-Type Builder and every entry gets a UUID v4 or UUID v7
-            value on save, from the admin, REST, GraphQL or the Document Service. Duplicates are
-            rejected, and values stay locked unless you allow editing.
-          </p>
-          <div class="hero-actions">
-            <a class="button primary" href="#install">Install in one minute</a>
-            <a class="button" href="https://github.com/Schero94/strapi-auto-uuid">View source</a>
+        <div class="hero-grid">
+          <div class="hero-copy">
+            <nav class="crumbs" aria-label="Breadcrumb">
+              <ol>
+                <li><a href="https://schero94.github.io/">Schero94</a></li>
+                <li><a href="https://schero94.github.io/plugins/">Plugins</a></li>
+                <li><span aria-current="page">Auto UUID docs</span></li>
+              </ol>
+            </nav>
+            <h1 id="page-title">UUIDs that stay put</h1>
+            <p class="definition">
+              Auto UUID is a free, MIT-licensed Strapi 5 plugin that adds a UUID v4 or UUID v7
+              custom field: the server fills it on every create, keeps it unique across documents
+              and locales, and locks it against edits.
+            </p>
+            <p>
+              It works the same from the admin, REST, GraphQL and the Document Service, and an admin
+              page checks, repairs, exports and imports every UUID.
+            </p>
+            <div class="hero-actions">
+              <a class="button primary" href="#install">Install in one minute</a>
+              <a class="button" href="https://github.com/Schero94/strapi-auto-uuid#readme"
+                >Read the README</a
+              >
+            </div>
+            <ul class="badges" aria-label="Compatibility and package details">
+              <li>Strapi 5.24+</li>
+              <li>Node.js 22.12 to 26</li>
+              <li>UUID v4 and v7</li>
+              <li>5 admin languages</li>
+              <li>No telemetry</li>
+              <li>MIT</li>
+            </ul>
+            <p class="shields" aria-label="Project status badges">
+              <a href="https://www.npmjs.com/package/strapi-auto-uuid-v5"
+                ><img
+                  src="https://img.shields.io/npm/v/strapi-auto-uuid-v5.svg"
+                  alt="npm version"
+                  height="20"
+              /></a>
+              <a href="https://www.npmjs.com/package/strapi-auto-uuid-v5"
+                ><img
+                  src="https://img.shields.io/npm/dm/strapi-auto-uuid-v5.svg"
+                  alt="npm downloads"
+                  height="20"
+              /></a>
+              <a
+                href="https://github.com/Schero94/strapi-auto-uuid/actions/workflows/ci.yml?query=branch%3Amain"
+                ><img
+                  src="https://img.shields.io/github/actions/workflow/status/Schero94/strapi-auto-uuid/ci.yml?branch=main&amp;label=CI&amp;logo=github"
+                  alt="CI build status"
+                  height="20"
+              /></a>
+              <a href="https://github.com/Schero94/strapi-auto-uuid/blob/main/LICENSE"
+                ><img
+                  src="https://img.shields.io/badge/License-MIT-blue.svg"
+                  alt="License: MIT"
+                  height="20"
+              /></a>
+              <a href="https://github.com/Schero94/strapi-auto-uuid#compatibility"
+                ><img
+                  src="https://img.shields.io/badge/Strapi-5.24%2B-4945FF.svg"
+                  alt="Strapi 5.24+"
+                  height="20"
+              /></a>
+              <a href="https://schero94.github.io/strapi-auto-uuid/"
+                ><img
+                  src="https://img.shields.io/badge/docs-project%20site-6d4aff.svg"
+                  alt="Documentation site"
+                  height="20"
+              /></a>
+            </p>
           </div>
-          <p class="shields" aria-label="Project status badges">
-            <a href="https://www.npmjs.com/package/strapi-auto-uuid-v5"
-              ><img
-                src="https://img.shields.io/npm/v/strapi-auto-uuid-v5.svg"
-                alt="npm version"
-                height="20"
-            /></a>
-            <a href="https://www.npmjs.com/package/strapi-auto-uuid-v5"
-              ><img
-                src="https://img.shields.io/npm/dm/strapi-auto-uuid-v5.svg"
-                alt="npm downloads"
-                height="20"
-            /></a>
-            <a
-              href="https://github.com/Schero94/strapi-auto-uuid/actions/workflows/ci.yml?query=branch%3Amain"
-              ><img
-                src="https://img.shields.io/github/actions/workflow/status/Schero94/strapi-auto-uuid/ci.yml?branch=main&amp;label=CI&amp;logo=github"
-                alt="CI build status"
-                height="20"
-            /></a>
-            <a href="https://github.com/Schero94/strapi-auto-uuid/blob/main/LICENSE"
-              ><img
-                src="https://img.shields.io/badge/License-MIT-blue.svg"
-                alt="License: MIT"
-                height="20"
-            /></a>
-            <a href="https://github.com/Schero94/strapi-auto-uuid#compatibility"
-              ><img
-                src="https://img.shields.io/badge/Strapi-5.24%2B-4945FF.svg"
-                alt="Strapi 5.24+"
-                height="20"
-            /></a>
-            <a href="https://schero94.github.io/strapi-auto-uuid/"
-              ><img
-                src="https://img.shields.io/badge/docs-project%20site-6d4aff.svg"
-                alt="Documentation site"
-                height="20"
-            /></a>
-          </p>
-          <div class="badges" aria-label="Compatibility and package details">
-            <span class="badge">Strapi 5.24+</span>
-            <span class="badge">Node.js 22.12+</span>
-            <span class="badge">UUID v4 and v7</span>
-            <span class="badge">5 admin languages</span>
-            <span class="badge">No telemetry</span>
-            <span class="badge">MIT</span>
-          </div>
+          <figure class="hero-shot">
+            <img
+              src="./img/settings-light.webp"
+              fetchpriority="high"
+              width="1440"
+              height="900"
+              alt="UUID management page in the Strapi admin with counts for content types, UUID fields, entries, duplicates, empty and malformed values, and repair buttons"
+            />
+          </figure>
         </div>
       </section>
-      <figure class="hero-shot">
-        <img
-          src="./img/settings-light.webp"
-          width="1440"
-          height="900"
-          alt="UUID management page in the Strapi admin with counts for content types, UUID fields, entries, duplicates, empty and malformed values, and repair buttons"
-        />
-      </figure>
     </div>
 
     <main class="layout" id="main-content">
       <nav class="side-nav" aria-label="Documentation sections">
+        <a href="#fit">Is it a fit?</a>
         <a href="#features">Features</a>
         <a href="#install">Install</a>
         <a href="#examples">Examples</a>
@@ -174,6 +289,51 @@
       </nav>
 
       <div class="content">
+        <section class="section summary" id="fit" aria-labelledby="fit-title">
+          <h2 id="fit-title">Is Auto UUID the right fit?</h2>
+          <div class="fit-grid">
+            <div class="fit fit-yes">
+              <h3>Use it when</h3>
+              <ul>
+                <li>Every entry needs a UUID the server generates, whatever the write path.</li>
+                <li>
+                  You want random v4 or time-sortable v7 values, optionally with a prefix such as
+                  <code>usr_</code>.
+                </li>
+                <li>No other document may reuse a value, in any locale, draft or published.</li>
+                <li>You need to check, repair, export or import UUIDs from the admin.</li>
+              </ul>
+            </div>
+            <div class="fit fit-no">
+              <h3>Skip it when</h3>
+              <ul>
+                <li>
+                  Your project runs Strapi 4. Use
+                  <a href="https://github.com/Cringe-Studio/strapi-auto-uuid"
+                    >Cringe-Studio/strapi-auto-uuid</a
+                  >.
+                </li>
+                <li>
+                  UUIDs inside components must be generated and validated on the server. The plugin
+                  does that for content-type fields only.
+                </li>
+                <li>
+                  You need a database unique index. The plugin checks uniqueness on save instead.
+                </li>
+              </ul>
+            </div>
+            <div class="fit fit-req">
+              <h3>Requirements</h3>
+              <ul>
+                <li>Strapi <code>^5.24.0</code></li>
+                <li>Node.js <code>&gt;=22.12.0 &lt;=26.x.x</code></li>
+                <li>SQLite, PostgreSQL, or MySQL 8 / MariaDB</li>
+                <li>No extra service: no Redis, no outbound network calls</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
         <section class="section" id="features">
           <h2>Features</h2>
           <p class="section-lead">
@@ -406,7 +566,7 @@ strapi.log.info(ticket.ticketId); // tkt_019a5f3c-...</code></pre>
             screens. All screenshots use synthetic data.
           </p>
           <div class="gallery">
-            <figure>
+            <figure class="shot">
               <a href="./img/repair-dialog-light.webp"
                 ><img
                   src="./img/repair-dialog-light.webp"
@@ -417,7 +577,7 @@ strapi.log.info(ticket.ticketId); // tkt_019a5f3c-...</code></pre>
               /></a>
               <figcaption>Repairs are previewed before anything is written</figcaption>
             </figure>
-            <figure>
+            <figure class="shot">
               <a href="./img/settings-dark.webp"
                 ><img
                   src="./img/settings-dark.webp"
@@ -428,7 +588,7 @@ strapi.log.info(ticket.ticketId); // tkt_019a5f3c-...</code></pre>
               /></a>
               <figcaption>UUID management in dark mode</figcaption>
             </figure>
-            <figure>
+            <figure class="shot">
               <a href="./img/field-editable-light.webp"
                 ><img
                   src="./img/field-editable-light.webp"
@@ -439,7 +599,7 @@ strapi.log.info(ticket.ticketId); // tkt_019a5f3c-...</code></pre>
               /></a>
               <figcaption>Editable field with copy and generate</figcaption>
             </figure>
-            <figure>
+            <figure class="shot">
               <a href="./img/field-locked-dark.webp"
                 ><img
                   src="./img/field-locked-dark.webp"
@@ -450,7 +610,7 @@ strapi.log.info(ticket.ticketId); // tkt_019a5f3c-...</code></pre>
               /></a>
               <figcaption>Locked fields in dark mode</figcaption>
             </figure>
-            <figure>
+            <figure class="shot">
               <a href="./img/content-type-builder-light.webp"
                 ><img
                   src="./img/content-type-builder-light.webp"
@@ -461,7 +621,7 @@ strapi.log.info(ticket.ticketId); // tkt_019a5f3c-...</code></pre>
               /></a>
               <figcaption>Field options in the Content-Type Builder</figcaption>
             </figure>
-            <figure>
+            <figure class="shot">
               <a href="./img/settings-light.webp"
                 ><img
                   src="./img/settings-light.webp"
@@ -474,7 +634,7 @@ strapi.log.info(ticket.ticketId); // tkt_019a5f3c-...</code></pre>
             </figure>
           </div>
           <div class="gallery gallery-mobile">
-            <figure>
+            <figure class="shot">
               <a href="./img/settings-mobile-light.webp"
                 ><img
                   src="./img/settings-mobile-light.webp"
@@ -485,7 +645,7 @@ strapi.log.info(ticket.ticketId); // tkt_019a5f3c-...</code></pre>
               /></a>
               <figcaption>Mobile, light</figcaption>
             </figure>
-            <figure>
+            <figure class="shot">
               <a href="./img/settings-mobile-dark.webp"
                 ><img
                   src="./img/settings-mobile-dark.webp"
@@ -971,41 +1131,41 @@ module.exports = { up };</code></pre>
 
         <section class="section" id="faq">
           <h2>FAQ</h2>
-          <div class="card-grid">
-            <article class="card">
-              <h3>Is there a database unique constraint?</h3>
+          <div class="faq">
+            <details>
+              <summary>Is there a database unique constraint?</summary>
               <p>
                 No. Draft, published and locale rows of one document share a value, so a plain
                 unique index is impossible. The plugin checks every save and serializes concurrent
                 saves with database locks.
               </p>
-            </article>
-            <article class="card">
-              <h3>Why does Duplicate in the list view fail?</h3>
+            </details>
+            <details>
+              <summary>Why does Duplicate in the list view fail?</summary>
               <p>
                 Strapi refuses its quick clone for unique attributes. Use the clone page of the
                 entry, or turn off <strong>Unique values</strong> for the field.
               </p>
-            </article>
-            <article class="card">
-              <h3>The import says the file is too large</h3>
+            </details>
+            <details>
+              <summary>The import says the file is too large</summary>
               <p>Export again: the export is split into files that each fit one import.</p>
-            </article>
-            <article class="card">
-              <h3>What about fields inside components?</h3>
+            </details>
+            <details>
+              <summary>What about fields inside components?</summary>
               <p>
                 The admin fills an empty one when the component is shown. The server does not
                 generate, validate or repair them.
               </p>
-            </article>
-            <article class="card">
-              <h3>Do I need Redis?</h3>
+            </details>
+            <details>
+              <summary>Do I need Redis?</summary>
               <p>No. Locks and rate-limit counters live in the database.</p>
-            </article>
-            <article class="card">
-              <h3>Does it phone home?</h3>
+            </details>
+            <details>
+              <summary>Does it phone home?</summary>
               <p>No. The plugin makes no network requests and has no license check.</p>
-            </article>
+            </details>
           </div>
         </section>
 
@@ -1014,8 +1174,9 @@ module.exports = { up };</code></pre>
           <p class="section-lead">
             Conventional Commits and semantic-release on pushes to <code>main</code>. Every release
             runs lint, format check, tests (including lifecycle and repair tests on a real SQLite
-            database), build and package verification, then publishes to npm with provenance. Pull
-            requests also run the PostgreSQL and 8-process tests on Node.js 22 and 24.
+            database), build and package verification, then publishes to npm with provenance. CI
+            runs the same checks on Node.js 22, 24 and 26 for every pull request, plus the
+            PostgreSQL and 8-process tests on Node.js 22.
           </p>
           <div class="code-card">
             <div class="code-label"><span>Terminal</span><span>local checks</span></div>
@@ -1042,15 +1203,42 @@ npm run verify</code></pre>
     </main>
 
     <footer class="footer">
-      <p>
-        Auto UUID for Strapi 5 is released under the MIT License. Originally created by
-        <a href="https://github.com/Cringe-Studio">Cringe Studio</a>.
-      </p>
-      <p>
-        <a href="https://github.com/Schero94/strapi-auto-uuid">Source</a> ·
-        <a href="https://github.com/Schero94/strapi-auto-uuid/issues">Issues</a> ·
-        <a href="https://github.com/Schero94/strapi-auto-uuid/blob/main/CHANGELOG.md">Changelog</a>
-      </p>
+      <div class="footer-inner">
+        <div>
+          <p class="footer-name">Auto UUID</p>
+          <p>
+            UUID v4 and v7 custom field for Strapi 5. MIT licensed, maintained by
+            <a href="https://schero94.github.io/">Schero D.</a>, originally created by
+            <a href="https://github.com/Cringe-Studio">Cringe Studio</a>.
+          </p>
+          <p>
+            Overview and the other plugins:
+            <a href="https://schero94.github.io/plugins/auto-uuid/">Auto UUID on the plugin hub</a>.
+          </p>
+        </div>
+        <div>
+          <h2>Project</h2>
+          <ul>
+            <li><a href="https://github.com/Schero94/strapi-auto-uuid">GitHub repository</a></li>
+            <li><a href="https://www.npmjs.com/package/strapi-auto-uuid-v5">npm package</a></li>
+            <li>
+              <a href="https://github.com/Schero94/strapi-auto-uuid/blob/main/CHANGELOG.md"
+                >Changelog</a
+              >
+            </li>
+            <li><a href="https://github.com/Schero94/strapi-auto-uuid/issues">Issues</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2>Docs</h2>
+          <ul>
+            <li><a href="https://github.com/Schero94/strapi-auto-uuid#readme">README</a></li>
+            <li><a href="#api">Admin API</a></li>
+            <li><a href="#configuration">Configuration</a></li>
+            <li><a href="./llms.txt">llms.txt</a></li>
+          </ul>
+        </div>
+      </div>
     </footer>
   </body>
 </html>

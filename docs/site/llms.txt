@@ -1,0 +1,56 @@
+# Auto UUID for Strapi 5
+
+> Auto UUID (npm: strapi-auto-uuid-v5, plugin id: field-uuid) is a free, MIT-licensed Strapi 5 plugin that adds a UUID v4 or v7 custom field. The server generates the value when an entry is created, keeps it unique across documents, locales and draft/published versions, and locks it unless editing is allowed. An admin page checks, repairs, exports and imports UUIDs.
+
+The current version is on npm (link below). It is the Strapi 5 continuation of Cringe-Studio/strapi-auto-uuid, which supports Strapi 4 only.
+
+What it does:
+
+- Custom field `plugin::field-uuid.uuid` with UUID v4 (random) or v7 (time-sortable) and an optional prefix of 1 to 16 letters, numbers, `_` or `-` (for example `usr_`).
+- Values are generated on the server for every write path: admin, REST, GraphQL and the Document Service.
+- Uniqueness is checked on every save, case-insensitively (RFC 9562); new values are stored in lowercase. There is no database unique constraint; concurrent saves are serialized with database locks.
+- Values are locked by default; the field options "Allow manual editing" and "Disable auto-generation" change that per field.
+- UUID fields inside components and dynamic zones are filled only by the admin panel; the server does not generate, validate or repair them.
+- Safe with several Strapi processes on one database (Railway replicas, pm2 cluster); no Redis.
+- No outbound network calls, no telemetry, no license key. Admin UI in English, German, French, Spanish and Portuguese.
+
+Requirements:
+
+- Strapi `^5.24.0` (Strapi 4: use Cringe-Studio/strapi-auto-uuid)
+- Node.js `>=22.12.0 <=26.x.x`
+- SQLite, PostgreSQL or MySQL 8 / MariaDB
+
+Install:
+
+```bash
+npm install strapi-auto-uuid-v5
+```
+
+```ts
+// config/plugins.ts
+export default () => ({
+  'field-uuid': {
+    enabled: true,
+  },
+});
+```
+
+Then rebuild the admin, add a UUID field in the Content-Type Builder and save an entry.
+
+Configuration essentials:
+
+- Plugin config keys (all optional, validated at boot): `defaultVersion` (`'v4'` | `'v7'`, default `'v4'`), `autoGenerate` (default `true`), `validateUniqueness` (default `true`), `maxRetryAttempts` (1 to 10, default `3`), `autoMigrate` (default `false`), `logLevel` (default `'info'`), `rateLimitStore` (`'auto'` | `'database'` | `'memory'`).
+- `STRAPI_AUTO_UUID_ALLOW_PRODUCTION_MIGRATE=true` lets `autoMigrate` run when `NODE_ENV=production`.
+- Admin permissions: `plugin::field-uuid.read`, `migrate`, `export`, `import`. The plugin adds no Content API permissions.
+
+## Docs
+
+- [Documentation site](https://schero94.github.io/strapi-auto-uuid/): features, install, examples, rules, screenshots, configuration, security, admin API, performance, several instances, compatibility, upgrading, FAQ
+- [README](https://github.com/Schero94/strapi-auto-uuid#readme): field options, examples, plugin configuration, admin API, permissions, security and privacy, troubleshooting
+- [CHANGELOG](https://github.com/Schero94/strapi-auto-uuid/blob/main/CHANGELOG.md)
+- [npm package](https://www.npmjs.com/package/strapi-auto-uuid-v5)
+
+## Optional
+
+- [Releases](https://github.com/Schero94/strapi-auto-uuid/releases)
+- [Plugin hub overview](https://schero94.github.io/plugins/auto-uuid/)
