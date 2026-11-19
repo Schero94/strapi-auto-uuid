@@ -2,7 +2,7 @@
 
 > Auto UUID (npm: strapi-auto-uuid-v5, plugin id: field-uuid) is a free, MIT-licensed Strapi 5 plugin that adds a UUID v4 or v7 custom field. The server generates the value when an entry is created, keeps it unique across documents, locales and draft/published versions, and locks it unless editing is allowed. An admin page checks, repairs, exports and imports UUIDs.
 
-The current version is on npm (link below). It is the Strapi 5 continuation of Cringe-Studio/strapi-auto-uuid, which supports Strapi 4 only.
+Current version: __PACKAGE_VERSION__ (npm). It is the Strapi 5 continuation of Cringe-Studio/strapi-auto-uuid, which supports Strapi 4 only.
 
 What it does:
 
