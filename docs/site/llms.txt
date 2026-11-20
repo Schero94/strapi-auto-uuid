@@ -43,6 +43,10 @@ Configuration essentials:
 - `STRAPI_AUTO_UUID_ALLOW_PRODUCTION_MIGRATE=true` lets `autoMigrate` run when `NODE_ENV=production`.
 - Admin permissions: `plugin::field-uuid.read`, `migrate`, `export`, `import`. The plugin adds no Content API permissions.
 
+## Used by
+
+No companies are listed yet. Using Auto UUID in production? Add your company: https://github.com/Schero94/strapi-auto-uuid/issues/new?template=showcase.yml
+
 ## Docs
 
 - [Documentation site](https://schero94.github.io/strapi-auto-uuid/): features, install, examples, rules, screenshots, configuration, security, admin API, performance, several instances, compatibility, upgrading, FAQ
