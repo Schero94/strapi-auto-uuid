@@ -12,49 +12,6 @@ const motion = (rules) => css`
   }
 `;
 
-/**
- * Hero banner. success600 to success700 with neutral0 text measures about
- * 5.0:1 to 6.7:1 in the light theme; the dark theme inverts both tokens
- * (light green with dark text), which keeps the contrast above 4.5:1.
- */
-export const HeroBanner = styled.section`
-  /* Solid fallback first: contrast tools and forced-colour modes read it. */
-  background-color: ${({ theme }) => theme.colors.success600};
-  background-image: linear-gradient(
-    135deg,
-    ${({ theme }) => theme.colors.success600} 0%,
-    ${({ theme }) => theme.colors.success700} 100%
-  );
-  color: ${({ theme }) => theme.colors.neutral0};
-  border-radius: ${({ theme }) => theme.borderRadius};
-  padding: ${({ theme }) => theme.spaces[5]};
-  min-width: 0;
-
-  ${({ theme }) => theme.breakpoints.medium} {
-    padding: ${({ theme }) => theme.spaces[7]};
-  }
-`;
-
-export const HeroText = styled.p`
-  margin: 0;
-  color: inherit;
-  font-size: ${({ theme, $size }) => theme.fontSizes[$size ?? 2]};
-  font-weight: ${({ theme, $bold }) => ($bold ? theme.fontWeights.bold : theme.fontWeights.regular)};
-  line-height: ${({ theme }) => theme.lineHeights[3]};
-  overflow-wrap: anywhere;
-`;
-
-export const HeroBadge = styled.span`
-  display: inline-flex;
-  align-items: center;
-  padding: ${({ theme }) => `${theme.spaces[1]} ${theme.spaces[3]}`};
-  border: 1px solid currentColor;
-  border-radius: ${({ theme }) => theme.borderRadius};
-  font-size: ${({ theme }) => theme.fontSizes[1]};
-  font-weight: ${({ theme }) => theme.fontWeights.bold};
-  white-space: nowrap;
-`;
-
 export const Card = styled.div`
   background: ${({ theme }) => theme.colors.neutral0};
   border: 1px solid ${({ theme }) => theme.colors.neutral200};

@@ -9,16 +9,7 @@
 import { forwardRef, useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useIntl } from 'react-intl';
 import { Alert, Badge, Box, Button, Checkbox, Flex, Grid, Typography } from '@strapi/design-system';
-import {
-  ArrowClockwise,
-  Check,
-  Download,
-  Plus,
-  Search,
-  Sparkle,
-  Upload,
-  WarningCircle,
-} from '@strapi/icons';
+import { Check, Download, Plus, Search, Sparkle, Upload, WarningCircle } from '@strapi/icons';
 import { Layouts, Page, useFetchClient, useNotification, useRBAC } from '@strapi/strapi/admin';
 import { PLUGIN_ID } from '../pluginId';
 import { getTranslation } from '../utils/getTranslation';
@@ -32,9 +23,6 @@ import {
   ActionIcon,
   Card,
   Fieldset,
-  HeroBadge,
-  HeroBanner,
-  HeroText,
   ModelList,
   ModelRow,
   Mono,
@@ -349,16 +337,19 @@ const SettingsPage = () => {
           id: getTranslation('settings.subtitle'),
           defaultMessage: 'Check, repair and back up the UUID fields of all content types',
         })}
+        secondaryAction={
+          stats?.version ? <Badge {...BADGE_TONES.neutral}>v{stats.version}</Badge> : undefined
+        }
         primaryAction={
           <Button
             ref={refreshButtonRef}
             variant="secondary"
-            startIcon={<ArrowClockwise aria-hidden />}
-            onClick={(event) => runKeepingFocus(event, refresh)}
-            loading={refreshing}
-            disabled={anyPending && !refreshing}
+            startIcon={<Search aria-hidden />}
+            onClick={(event) => runKeepingFocus(event, runCheck)}
+            loading={checking}
+            disabled={anyPending && !checking}
           >
-            {t({ id: getTranslation('settings.refresh'), defaultMessage: 'Refresh' })}
+            {t({ id: getTranslation('actions.check'), defaultMessage: 'Run check' })}
           </Button>
         }
       />
@@ -391,36 +382,6 @@ const SettingsPage = () => {
             </Alert>
           )}
 
-          <HeroBanner aria-labelledby={`${headingId}-hero`}>
-            <Flex justifyContent="space-between" alignItems="flex-start" gap={4} wrap="wrap">
-              <Flex
-                direction="column"
-                alignItems="flex-start"
-                gap={2}
-                minWidth={0}
-                flex="1 1 28rem"
-              >
-                <HeroText $size={1} $bold>
-                  {t({ id: getTranslation('hero.eyebrow'), defaultMessage: 'Strapi Auto UUID' })}
-                </HeroText>
-                <HeroText as="h2" id={`${headingId}-hero`} $size={5} $bold>
-                  {t({
-                    id: getTranslation('hero.title'),
-                    defaultMessage: 'Stable identifiers for your content',
-                  })}
-                </HeroText>
-                <HeroText $size={2}>
-                  {t({
-                    id: getTranslation('hero.body'),
-                    defaultMessage:
-                      'Every entry gets a UUID on save. Duplicates are rejected, and values that should not change stay locked.',
-                  })}
-                </HeroText>
-              </Flex>
-              {stats?.version && <HeroBadge>v{stats.version}</HeroBadge>}
-            </Flex>
-          </HeroBanner>
-
           {scanHasErrors && !dismissed.scan && (
             <Alert
               closeLabel={closeLabel}
@@ -434,7 +395,7 @@ const SettingsPage = () => {
               {t({
                 id: getTranslation('scan.incomplete.body'),
                 defaultMessage:
-                  'Repairs are paused until every field can be checked. Review the field options in the Content-Type Builder, then refresh.',
+                  'Repairs are paused until every field can be checked. Review the field options in the Content-Type Builder, then run the check again.',
               })}
             </Alert>
           )}
@@ -539,244 +500,254 @@ const SettingsPage = () => {
             </Box>
           </Box>
 
-          <Box tag="section" aria-labelledby={`${headingId}-actions`}>
-            <Typography variant="delta" tag="h2" id={`${headingId}-actions`} textColor="neutral800">
-              {t({ id: getTranslation('actions.title'), defaultMessage: 'Actions' })}
-            </Typography>
-            <Box paddingTop={4}>
-              <Grid.Root gap={4}>
-                <Grid.Item col={4} s={6} xs={12} direction="column" alignItems="stretch">
-                  <ActionCard
-                    icon={Search}
-                    tone="primary"
-                    onClick={(event) => runKeepingFocus(event, runCheck)}
-                    disabled={anyPending}
-                    aria-busy={checking}
-                    title={t({ id: getTranslation('actions.check'), defaultMessage: 'Run check' })}
-                    description={t({
-                      id: getTranslation('actions.check.description'),
-                      defaultMessage:
-                        'Scan every UUID field, in all locales and in drafts and published versions.',
-                    })}
-                  />
-                </Grid.Item>
-
-                {canMigrate && (
-                  <Grid.Item col={4} s={6} xs={12} direction="column" alignItems="stretch">
-                    <RepairDialog
-                      {...repairCommon}
-                      endpoint={`/${PLUGIN_ID}/migration/run`}
-                      buildBody={(dryRun) => (anyOption ? { dryRun, ...repairOptions } : null)}
-                      resetKey={optionsVersion}
-                      title={t({
-                        id: getTranslation('repair.all.title'),
-                        defaultMessage: 'Repair all',
-                      })}
-                      description={t({
-                        id: getTranslation('repair.all.description'),
-                        defaultMessage:
-                          'Choose what to repair, preview the changes, then apply them. The oldest entry keeps a shared UUID; draft and published versions stay in sync.',
-                      })}
-                      confirmTitle={t({
-                        id: getTranslation('repair.all.confirm'),
-                        defaultMessage: 'Apply these UUID repairs?',
-                      })}
-                      trigger={
-                        <ActionCard
-                          icon={Sparkle}
-                          tone="alternative"
-                          title={t({
-                            id: getTranslation('repair.all.title'),
-                            defaultMessage: 'Repair all',
-                          })}
-                          description={t({
-                            id: getTranslation('actions.repair.description'),
-                            defaultMessage:
-                              'Replace duplicate and malformed UUIDs and fill empty fields in one run.',
-                          })}
-                        />
-                      }
-                    >
-                      <Fieldset>
-                        <Typography variant="sigma" tag="legend" textColor="neutral600">
-                          {t({ id: getTranslation('repair.options'), defaultMessage: 'Repair' })}
-                        </Typography>
-                        <Checkbox
-                          checked={repairOptions.fixDuplicates}
-                          onCheckedChange={toggleOption('fixDuplicates')}
-                        >
-                          {t({
-                            id: getTranslation('repair.option.duplicates'),
-                            defaultMessage: 'Duplicate UUIDs',
-                          })}
-                        </Checkbox>
-                        <Checkbox
-                          checked={repairOptions.fixInvalid}
-                          onCheckedChange={toggleOption('fixInvalid')}
-                        >
-                          {t({
-                            id: getTranslation('repair.option.invalid'),
-                            defaultMessage: 'Malformed values',
-                          })}
-                        </Checkbox>
-                        <Checkbox
-                          checked={repairOptions.fixEmpty}
-                          onCheckedChange={toggleOption('fixEmpty')}
-                        >
-                          {t({
-                            id: getTranslation('repair.option.empty'),
-                            defaultMessage: 'Empty fields',
-                          })}
-                        </Checkbox>
-                        <Checkbox
-                          checked={repairOptions.fixLegacy}
-                          onCheckedChange={toggleOption('fixLegacy')}
-                        >
-                          {t({
-                            id: getTranslation('repair.option.legacy'),
-                            defaultMessage: 'Values in an older version or prefix (usually kept)',
-                          })}
-                        </Checkbox>
-                        {!anyOption && (
-                          <Typography variant="pi" textColor="danger600">
-                            {t({
-                              id: getTranslation('repair.option.required'),
-                              defaultMessage: 'Select at least one option.',
+          {canMigrate && (
+            <Box tag="section" aria-labelledby={`${headingId}-repair`}>
+              <Typography
+                variant="delta"
+                tag="h2"
+                id={`${headingId}-repair`}
+                textColor="neutral800"
+              >
+                {t({ id: getTranslation('actions.repairTitle'), defaultMessage: 'Repair' })}
+              </Typography>
+              <Box paddingTop={4}>
+                <Grid.Root gap={4}>
+                  {canMigrate && (
+                    <Grid.Item col={4} s={6} xs={12} direction="column" alignItems="stretch">
+                      <RepairDialog
+                        {...repairCommon}
+                        endpoint={`/${PLUGIN_ID}/migration/run`}
+                        buildBody={(dryRun) => (anyOption ? { dryRun, ...repairOptions } : null)}
+                        resetKey={optionsVersion}
+                        title={t({
+                          id: getTranslation('repair.all.title'),
+                          defaultMessage: 'Repair all',
+                        })}
+                        description={t({
+                          id: getTranslation('repair.all.description'),
+                          defaultMessage:
+                            'Choose what to repair, preview the changes, then apply them. The oldest entry keeps a shared UUID; draft and published versions stay in sync.',
+                        })}
+                        confirmTitle={t({
+                          id: getTranslation('repair.all.confirm'),
+                          defaultMessage: 'Apply these UUID repairs?',
+                        })}
+                        trigger={
+                          <ActionCard
+                            icon={Sparkle}
+                            tone="primary"
+                            title={t({
+                              id: getTranslation('repair.all.title'),
+                              defaultMessage: 'Repair all',
                             })}
+                            description={t({
+                              id: getTranslation('actions.repair.description'),
+                              defaultMessage:
+                                'Replace duplicate and malformed UUIDs and fill empty fields in one run.',
+                            })}
+                          />
+                        }
+                      >
+                        <Fieldset>
+                          <Typography variant="sigma" tag="legend" textColor="neutral600">
+                            {t({ id: getTranslation('repair.options'), defaultMessage: 'Repair' })}
                           </Typography>
-                        )}
-                      </Fieldset>
-                    </RepairDialog>
-                  </Grid.Item>
-                )}
+                          <Checkbox
+                            checked={repairOptions.fixDuplicates}
+                            onCheckedChange={toggleOption('fixDuplicates')}
+                          >
+                            {t({
+                              id: getTranslation('repair.option.duplicates'),
+                              defaultMessage: 'Duplicate UUIDs',
+                            })}
+                          </Checkbox>
+                          <Checkbox
+                            checked={repairOptions.fixInvalid}
+                            onCheckedChange={toggleOption('fixInvalid')}
+                          >
+                            {t({
+                              id: getTranslation('repair.option.invalid'),
+                              defaultMessage: 'Malformed values',
+                            })}
+                          </Checkbox>
+                          <Checkbox
+                            checked={repairOptions.fixEmpty}
+                            onCheckedChange={toggleOption('fixEmpty')}
+                          >
+                            {t({
+                              id: getTranslation('repair.option.empty'),
+                              defaultMessage: 'Empty fields',
+                            })}
+                          </Checkbox>
+                          <Checkbox
+                            checked={repairOptions.fixLegacy}
+                            onCheckedChange={toggleOption('fixLegacy')}
+                          >
+                            {t({
+                              id: getTranslation('repair.option.legacy'),
+                              defaultMessage: 'Values in an older version or prefix (usually kept)',
+                            })}
+                          </Checkbox>
+                          {!anyOption && (
+                            <Typography variant="pi" textColor="danger600">
+                              {t({
+                                id: getTranslation('repair.option.required'),
+                                defaultMessage: 'Select at least one option.',
+                              })}
+                            </Typography>
+                          )}
+                        </Fieldset>
+                      </RepairDialog>
+                    </Grid.Item>
+                  )}
 
-                {canMigrate && (
-                  <Grid.Item col={4} s={6} xs={12} direction="column" alignItems="stretch">
-                    <RepairDialog
-                      {...repairCommon}
-                      endpoint={`/${PLUGIN_ID}/autofix`}
-                      buildBody={(dryRun) => ({ dryRun })}
-                      title={t({
-                        id: getTranslation('repair.duplicates.title'),
-                        defaultMessage: 'Replace duplicates',
-                      })}
-                      description={t({
-                        id: getTranslation('repair.duplicates.description'),
-                        defaultMessage:
-                          'When several entries share a UUID, the oldest keeps it and the others get a new one.',
-                      })}
-                      confirmTitle={t({
-                        id: getTranslation('repair.duplicates.confirm'),
-                        defaultMessage: 'Replace the duplicate UUIDs?',
-                      })}
-                      trigger={
-                        <ActionCard
-                          icon={WarningCircle}
-                          tone="danger"
-                          title={t({
-                            id: getTranslation('repair.duplicates.title'),
-                            defaultMessage: 'Replace duplicates',
-                          })}
-                          description={t({
-                            id: getTranslation('actions.duplicates.description'),
-                            defaultMessage:
-                              'Give every entry that shares a UUID with an older entry a new one.',
-                          })}
-                        />
-                      }
-                    />
-                  </Grid.Item>
-                )}
+                  {canMigrate && (
+                    <Grid.Item col={4} s={6} xs={12} direction="column" alignItems="stretch">
+                      <RepairDialog
+                        {...repairCommon}
+                        endpoint={`/${PLUGIN_ID}/autofix`}
+                        buildBody={(dryRun) => ({ dryRun })}
+                        title={t({
+                          id: getTranslation('repair.duplicates.title'),
+                          defaultMessage: 'Replace duplicates',
+                        })}
+                        description={t({
+                          id: getTranslation('repair.duplicates.description'),
+                          defaultMessage:
+                            'When several entries share a UUID, the oldest keeps it and the others get a new one.',
+                        })}
+                        confirmTitle={t({
+                          id: getTranslation('repair.duplicates.confirm'),
+                          defaultMessage: 'Replace the duplicate UUIDs?',
+                        })}
+                        trigger={
+                          <ActionCard
+                            icon={WarningCircle}
+                            tone="primary"
+                            title={t({
+                              id: getTranslation('repair.duplicates.title'),
+                              defaultMessage: 'Replace duplicates',
+                            })}
+                            description={t({
+                              id: getTranslation('actions.duplicates.description'),
+                              defaultMessage:
+                                'Give every entry that shares a UUID with an older entry a new one.',
+                            })}
+                          />
+                        }
+                      />
+                    </Grid.Item>
+                  )}
 
-                {canMigrate && (
-                  <Grid.Item col={4} s={6} xs={12} direction="column" alignItems="stretch">
-                    <RepairDialog
-                      {...repairCommon}
-                      endpoint={`/${PLUGIN_ID}/generate-missing`}
-                      buildBody={(dryRun) => ({ dryRun })}
-                      title={t({
-                        id: getTranslation('repair.missing.title'),
-                        defaultMessage: 'Generate missing UUIDs',
-                      })}
-                      description={t({
-                        id: getTranslation('repair.missing.description'),
-                        defaultMessage:
-                          'Fill empty UUID fields. Fields with auto-generation turned off are left empty.',
-                      })}
-                      confirmTitle={t({
-                        id: getTranslation('repair.missing.confirm'),
-                        defaultMessage: 'Generate the missing UUIDs?',
-                      })}
-                      confirmBody={t({
-                        id: getTranslation('repair.missing.confirmBody'),
-                        defaultMessage:
-                          'Empty UUID fields get a new value. Existing values are not changed.',
-                      })}
-                      trigger={
-                        <ActionCard
-                          icon={Plus}
-                          tone="success"
-                          title={t({
-                            id: getTranslation('repair.missing.title'),
-                            defaultMessage: 'Generate missing UUIDs',
-                          })}
-                          description={t({
-                            id: getTranslation('actions.missing.description'),
-                            defaultMessage:
-                              'Fill entries that were created before the UUID field existed.',
-                          })}
-                        />
-                      }
-                    />
-                  </Grid.Item>
-                )}
-
-                {canExport && (
-                  <Grid.Item col={4} s={6} xs={12} direction="column" alignItems="stretch">
-                    <ActionCard
-                      icon={Download}
-                      tone="secondary"
-                      onClick={(event) => runKeepingFocus(event, exportMappings)}
-                      disabled={anyPending}
-                      aria-busy={exporting}
-                      title={t({
-                        id: getTranslation('actions.export'),
-                        defaultMessage: 'Export UUIDs',
-                      })}
-                      description={t({
-                        id: getTranslation('actions.export.description'),
-                        defaultMessage: 'Download every UUID with its entry as a JSON backup.',
-                      })}
-                    />
-                  </Grid.Item>
-                )}
-
-                {canImport && (
-                  <Grid.Item col={4} s={6} xs={12} direction="column" alignItems="stretch">
-                    <ImportDialog
-                      onApplied={onApplied}
-                      onPendingChange={setBusy}
-                      disabled={anyPending}
-                      trigger={
-                        <ActionCard
-                          icon={Upload}
-                          tone="warning"
-                          title={t({
-                            id: getTranslation('actions.import'),
-                            defaultMessage: 'Import UUIDs',
-                          })}
-                          description={t({
-                            id: getTranslation('actions.import.description'),
-                            defaultMessage: 'Restore UUIDs from an export into empty fields.',
-                          })}
-                        />
-                      }
-                    />
-                  </Grid.Item>
-                )}
-              </Grid.Root>
+                  {canMigrate && (
+                    <Grid.Item col={4} s={6} xs={12} direction="column" alignItems="stretch">
+                      <RepairDialog
+                        {...repairCommon}
+                        endpoint={`/${PLUGIN_ID}/generate-missing`}
+                        buildBody={(dryRun) => ({ dryRun })}
+                        title={t({
+                          id: getTranslation('repair.missing.title'),
+                          defaultMessage: 'Generate missing UUIDs',
+                        })}
+                        description={t({
+                          id: getTranslation('repair.missing.description'),
+                          defaultMessage:
+                            'Fill empty UUID fields. Fields with auto-generation turned off are left empty.',
+                        })}
+                        confirmTitle={t({
+                          id: getTranslation('repair.missing.confirm'),
+                          defaultMessage: 'Generate the missing UUIDs?',
+                        })}
+                        confirmBody={t({
+                          id: getTranslation('repair.missing.confirmBody'),
+                          defaultMessage:
+                            'Empty UUID fields get a new value. Existing values are not changed.',
+                        })}
+                        trigger={
+                          <ActionCard
+                            icon={Plus}
+                            tone="primary"
+                            title={t({
+                              id: getTranslation('repair.missing.title'),
+                              defaultMessage: 'Generate missing UUIDs',
+                            })}
+                            description={t({
+                              id: getTranslation('actions.missing.description'),
+                              defaultMessage:
+                                'Fill entries that were created before the UUID field existed.',
+                            })}
+                          />
+                        }
+                      />
+                    </Grid.Item>
+                  )}
+                </Grid.Root>
+              </Box>
             </Box>
-          </Box>
+          )}
+
+          {(canExport || canImport) && (
+            <Box tag="section" aria-labelledby={`${headingId}-backup`}>
+              <Typography
+                variant="delta"
+                tag="h2"
+                id={`${headingId}-backup`}
+                textColor="neutral800"
+              >
+                {t({
+                  id: getTranslation('actions.backupTitle'),
+                  defaultMessage: 'Back up and restore',
+                })}
+              </Typography>
+              <Box paddingTop={4}>
+                <Grid.Root gap={4}>
+                  {canExport && (
+                    <Grid.Item col={4} s={6} xs={12} direction="column" alignItems="stretch">
+                      <ActionCard
+                        icon={Download}
+                        tone="primary"
+                        onClick={(event) => runKeepingFocus(event, exportMappings)}
+                        disabled={anyPending}
+                        aria-busy={exporting}
+                        title={t({
+                          id: getTranslation('actions.export'),
+                          defaultMessage: 'Export UUIDs',
+                        })}
+                        description={t({
+                          id: getTranslation('actions.export.description'),
+                          defaultMessage: 'Download every UUID with its entry as a JSON backup.',
+                        })}
+                      />
+                    </Grid.Item>
+                  )}
+
+                  {canImport && (
+                    <Grid.Item col={4} s={6} xs={12} direction="column" alignItems="stretch">
+                      <ImportDialog
+                        onApplied={onApplied}
+                        onPendingChange={setBusy}
+                        disabled={anyPending}
+                        trigger={
+                          <ActionCard
+                            icon={Upload}
+                            tone="primary"
+                            title={t({
+                              id: getTranslation('actions.import'),
+                              defaultMessage: 'Import UUIDs',
+                            })}
+                            description={t({
+                              id: getTranslation('actions.import.description'),
+                              defaultMessage: 'Restore UUIDs from an export into empty fields.',
+                            })}
+                          />
+                        }
+                      />
+                    </Grid.Item>
+                  )}
+                </Grid.Root>
+              </Box>
+            </Box>
+          )}
 
           <Box tag="section" aria-labelledby={`${headingId}-models`}>
             <Typography variant="delta" tag="h2" id={`${headingId}-models`} textColor="neutral800">

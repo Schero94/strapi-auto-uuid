@@ -1,3 +1,12 @@
+## [Unreleased]
+
+### Changed
+
+* UUID management page: one "Run check" button in the header replaces the header "Refresh" button and the "Run check" card, which loaded the same scan under two names. After a check the page says the counts are from that check.
+* The decorative green banner is gone. The page now starts with the native header (title, version badge, subtitle), so the repair actions are visible on a laptop screen without scrolling.
+* Actions are sorted into "Repair" (Repair all, Replace duplicates, Generate missing UUIDs) and "Back up and restore" (Export, Import). Every action card uses the same neutral icon colour; colour no longer differs per card without meaning.
+* German copy addresses the reader with "Sie" in instructions and error messages.
+
 ## [2.1.3](https://github.com/Schero94/strapi-auto-uuid/compare/v2.1.2...v2.1.3) (2026-11-18)
 
 
