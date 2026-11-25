@@ -15,7 +15,7 @@ Give every Strapi 5 entry a UUID that the server generates, that no other docume
 
 Live docs: https://schero94.github.io/strapi-auto-uuid/
 
-![UUID management page in the Strapi admin panel with counts per content type and repair actions](https://schero94.github.io/strapi-auto-uuid/img/settings-light.webp)
+![UUID management page in the Strapi admin panel with a Run check button, overview counts that flag duplicate, empty and malformed UUIDs, and the Repair actions](https://schero94.github.io/strapi-auto-uuid/img/settings-light.webp)
 
 ```text
 POST /api/tickets   { "data": { "title": "Printer offline" } }
