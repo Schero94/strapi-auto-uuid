@@ -1,4 +1,10 @@
-## [Unreleased]
+## [2.1.4](https://github.com/Schero94/strapi-auto-uuid/compare/v2.1.3...v2.1.4) (2026-11-25)
+
+
+### Bug Fixes
+
+* **admin:** clearer click paths, consistent wording and spacing ([#24](https://github.com/Schero94/strapi-auto-uuid/issues/24)) ([084c842](https://github.com/Schero94/strapi-auto-uuid/commit/084c84223efb170a5e6f19db1f23e3746248ebe2))
+
 
 ### Changed
 
